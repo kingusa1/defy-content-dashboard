@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp,
   Save,
@@ -15,11 +15,20 @@ import {
   Target,
   BarChart3,
   Calendar,
-  Eye
+  Eye,
+  UserCircle,
+  X,
+  PlusCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import WeekMetricsAnalytics from './WeekMetricsAnalytics';
 import axios from 'axios';
+
+// Default agents list
+const DEFAULT_AGENTS = ['Ramy Sharaf', 'Deniz', 'Mohamed Mounir'];
+
+// Local storage key for agents
+const AGENTS_STORAGE_KEY = 'weekMetrics_agents';
 
 interface WeekMetric {
   id: string;
@@ -66,7 +75,50 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
   const [newMetric, setNewMetric] = useState<Partial<WeekMetric>>({});
   const [activeView, setActiveView] = useState<'data' | 'analytics'>('analytics');
 
+  // Agent filter state
+  const [selectedAgent, setSelectedAgent] = useState<string>('all');
+  const [agents, setAgents] = useState<string[]>(() => {
+    const saved = localStorage.getItem(AGENTS_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : DEFAULT_AGENTS;
+  });
+  const [showAddAgentModal, setShowAddAgentModal] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
+
   const isAdmin = user?.role === 'admin';
+
+  // Filter metrics based on selected agent
+  const filteredMetrics = useMemo(() => {
+    if (selectedAgent === 'all') {
+      return metrics;
+    }
+    return metrics.filter(m =>
+      m.agent?.toLowerCase().includes(selectedAgent.toLowerCase()) ||
+      m.defyLead?.toLowerCase().includes(selectedAgent.toLowerCase())
+    );
+  }, [metrics, selectedAgent]);
+
+  // Save agents to localStorage when changed
+  useEffect(() => {
+    localStorage.setItem(AGENTS_STORAGE_KEY, JSON.stringify(agents));
+  }, [agents]);
+
+  // Add new agent
+  const handleAddAgent = () => {
+    if (newAgentName.trim() && !agents.includes(newAgentName.trim())) {
+      setAgents(prev => [...prev, newAgentName.trim()]);
+      setNewAgentName('');
+      setShowAddAgentModal(false);
+    }
+  };
+
+  // Remove agent
+  const handleRemoveAgent = (agentToRemove: string) => {
+    setAgents(prev => prev.filter(a => a !== agentToRemove));
+    if (selectedAgent === agentToRemove) {
+      setSelectedAgent('all');
+    }
+  };
 
   // All fields in the sheet
   const allFields = [
@@ -279,6 +331,188 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
         </div>
       </div>
 
+      {/* Agent Filter Dropdown */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+              <UserCircle className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h4 className="font-bold text-[#1b1e4c]">Filter by Agent</h4>
+              <p className="text-xs text-slate-500">
+                {selectedAgent === 'all'
+                  ? `Showing all ${metrics.length} records`
+                  : `Showing ${filteredMetrics.length} of ${metrics.length} records for ${selectedAgent}`
+                }
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Agent Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-[#1b1e4c] hover:bg-slate-200 transition-colors min-w-[160px] justify-between"
+              >
+                <span className="truncate">
+                  {selectedAgent === 'all' ? 'All Agents' : selectedAgent}
+                </span>
+                <ChevronDown size={16} className={`transition-transform ${agentDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {agentDropdownOpen && (
+                <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                  <div className="max-h-60 overflow-y-auto">
+                    {/* All Agents Option */}
+                    <button
+                      onClick={() => {
+                        setSelectedAgent('all');
+                        setAgentDropdownOpen(false);
+                      }}
+                      className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${
+                        selectedAgent === 'all' ? 'bg-[#13BCC5]/10 text-[#13BCC5]' : 'text-[#1b1e4c]'
+                      }`}
+                    >
+                      <Users size={16} />
+                      <span className="font-medium">All Agents</span>
+                      {selectedAgent === 'all' && <CheckCircle2 size={14} className="ml-auto" />}
+                    </button>
+
+                    <div className="border-t border-slate-100" />
+
+                    {/* Individual Agents */}
+                    {agents.map((agent) => (
+                      <div
+                        key={agent}
+                        className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${
+                          selectedAgent === agent ? 'bg-[#13BCC5]/10 text-[#13BCC5]' : 'text-[#1b1e4c]'
+                        }`}
+                      >
+                        <button
+                          onClick={() => {
+                            setSelectedAgent(agent);
+                            setAgentDropdownOpen(false);
+                          }}
+                          className="flex items-center gap-3 flex-1"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#1b1e4c] to-[#2a2e5c] flex items-center justify-center text-white text-xs font-bold">
+                            {agent.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium">{agent}</span>
+                          {selectedAgent === agent && <CheckCircle2 size={14} className="ml-auto" />}
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveAgent(agent);
+                            }}
+                            className="p-1 hover:bg-red-100 rounded text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Add New Agent Button */}
+                    {isAdmin && (
+                      <>
+                        <div className="border-t border-slate-100" />
+                        <button
+                          onClick={() => {
+                            setShowAddAgentModal(true);
+                            setAgentDropdownOpen(false);
+                          }}
+                          className="w-full px-4 py-3 text-left text-sm flex items-center gap-3 text-[#13BCC5] hover:bg-[#13BCC5]/5 transition-colors"
+                        >
+                          <PlusCircle size={16} />
+                          <span className="font-medium">Add New Agent</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Quick agent chips */}
+            <div className="hidden md:flex items-center gap-2">
+              {agents.slice(0, 3).map((agent) => (
+                <button
+                  key={agent}
+                  onClick={() => setSelectedAgent(selectedAgent === agent ? 'all' : agent)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    selectedAgent === agent
+                      ? 'bg-[#13BCC5] text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {agent.split(' ')[0]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Agent Modal */}
+      {showAddAgentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-bold text-[#1b1e4c] text-lg">Add New Agent</h4>
+              <button
+                onClick={() => {
+                  setShowAddAgentModal(false);
+                  setNewAgentName('');
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-2">
+                  Agent Name
+                </label>
+                <input
+                  type="text"
+                  value={newAgentName}
+                  onChange={(e) => setNewAgentName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddAgent()}
+                  placeholder="Enter agent name..."
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowAddAgentModal(false);
+                    setNewAgentName('');
+                  }}
+                  className="flex-1 px-4 py-3 text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddAgent}
+                  disabled={!newAgentName.trim()}
+                  className="flex-1 px-4 py-3 bg-[#13BCC5] text-white rounded-xl hover:bg-[#0FA8B0] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add Agent
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* View Toggle */}
       <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-fit">
         <button
@@ -366,7 +600,7 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
 
       {/* Analytics View */}
       {activeView === 'analytics' && (
-        <WeekMetricsAnalytics metrics={metrics} />
+        <WeekMetricsAnalytics metrics={filteredMetrics} />
       )}
 
       {/* Data View */}
@@ -380,7 +614,7 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                   <BarChart3 className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-lg md:text-2xl font-bold text-[#1b1e4c]">{metrics.length}</p>
+                  <p className="text-lg md:text-2xl font-bold text-[#1b1e4c]">{filteredMetrics.length}</p>
                   <p className="text-xs text-slate-500 truncate">Total Rows</p>
                 </div>
               </div>
@@ -392,7 +626,7 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                 </div>
                 <div className="min-w-0">
                   <p className="text-lg md:text-2xl font-bold text-[#1b1e4c]">
-                    {metrics.filter(m => m.defyLead).length}
+                    {filteredMetrics.filter(m => m.defyLead).length}
                   </p>
                   <p className="text-xs text-slate-500 truncate">With Lead</p>
                 </div>
@@ -405,7 +639,7 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                 </div>
                 <div className="min-w-0">
                   <p className="text-lg md:text-2xl font-bold text-[#1b1e4c]">
-                    {metrics.filter(m => m.campaign).length}
+                    {filteredMetrics.filter(m => m.campaign).length}
                   </p>
                   <p className="text-xs text-slate-500 truncate">Campaigns</p>
                 </div>
@@ -418,7 +652,7 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                 </div>
                 <div className="min-w-0">
                   <p className="text-lg md:text-2xl font-bold text-[#1b1e4c]">
-                    {[...new Set(metrics.map(m => m.weekEnd).filter(Boolean))].length}
+                    {[...new Set(filteredMetrics.map(m => m.weekEnd).filter(Boolean))].length}
                   </p>
                   <p className="text-xs text-slate-500 truncate">Week Ends</p>
                 </div>
@@ -435,11 +669,16 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
               </p>
             </div>
 
-            {metrics.length === 0 ? (
+            {filteredMetrics.length === 0 ? (
               <div className="p-8 md:p-12 text-center">
                 <TrendingUp className="w-10 h-10 md:w-12 md:h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-500">No week metrics data yet</p>
-                {isAdmin && (
+                <p className="text-slate-500">
+                  {selectedAgent === 'all'
+                    ? 'No week metrics data yet'
+                    : `No data found for ${selectedAgent}`
+                  }
+                </p>
+                {isAdmin && selectedAgent === 'all' && (
                   <button
                     onClick={() => setShowAddForm(true)}
                     className="mt-4 text-[#13BCC5] hover:underline text-sm"
@@ -447,10 +686,18 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     Add your first row
                   </button>
                 )}
+                {selectedAgent !== 'all' && (
+                  <button
+                    onClick={() => setSelectedAgent('all')}
+                    className="mt-4 text-[#13BCC5] hover:underline text-sm"
+                  >
+                    Show all agents
+                  </button>
+                )}
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {metrics.map((metric) => (
+                {filteredMetrics.map((metric) => (
                   <div key={metric.id} className="hover:bg-slate-50 transition-colors">
                     {/* Row Header */}
                     <div

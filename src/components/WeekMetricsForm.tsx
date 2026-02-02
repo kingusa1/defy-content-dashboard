@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   TrendingUp,
   Save,
@@ -24,7 +24,8 @@ import {
   ArrowLeft,
   Check,
   CalendarDays,
-  Filter
+  Filter,
+  Search
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import WeekMetricsAnalytics from './WeekMetricsAnalytics';
@@ -36,6 +37,73 @@ const DEFAULT_AGENTS = ['Ramy Sharaf', 'Deniz', 'Mohamed Mounir'];
 
 // Local storage key for agents
 const AGENTS_STORAGE_KEY = 'weekMetrics_agents';
+
+// Comprehensive insurance audience types
+const INSURANCE_AUDIENCES = [
+  // General
+  'Generalized',
+  // Insurance Professionals
+  'Insurance Agents',
+  'Insurance Brokers',
+  'Insurance Underwriters',
+  'Claims Adjusters',
+  'Claims Managers',
+  'Risk Managers',
+  'Actuaries',
+  'Insurance Analysts',
+  'Insurance Executives',
+  'Insurance Sales Managers',
+  'Insurance Account Managers',
+  'Insurance Customer Service',
+  // Insurance Types
+  'Life Insurance Professionals',
+  'Health Insurance Professionals',
+  'Property Insurance Professionals',
+  'Casualty Insurance Professionals',
+  'Auto Insurance Professionals',
+  'Commercial Insurance Professionals',
+  'Workers Compensation Professionals',
+  'Liability Insurance Professionals',
+  'Reinsurance Professionals',
+  'Surplus Lines Professionals',
+  // Business Decision Makers
+  'Business Owners',
+  'Small Business Owners',
+  'C-Level Executives',
+  'CFOs',
+  'CEOs',
+  'COOs',
+  'HR Managers',
+  'HR Directors',
+  'Benefits Managers',
+  'Risk Officers',
+  'Compliance Officers',
+  // Industry Specific
+  'Healthcare Administrators',
+  'Construction Managers',
+  'Real Estate Professionals',
+  'Fleet Managers',
+  'Manufacturing Executives',
+  'Retail Managers',
+  'Restaurant Owners',
+  'Technology Executives',
+  'Financial Advisors',
+  'Wealth Managers',
+  // Professional Services
+  'Accountants',
+  'CPAs',
+  'Attorneys',
+  'Consultants',
+  'IT Decision Makers',
+  'Sales Professionals',
+  'Marketing Professionals',
+  // Insurance Operations
+  'Policy Administrators',
+  'Insurance Operations Managers',
+  'Insurance IT Professionals',
+  'InsurTech Professionals',
+  'Digital Insurance Professionals',
+];
 
 interface WeekMetric {
   id: string;
@@ -96,6 +164,12 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
   const [selectedDate, setSelectedDate] = useState<string>('all');
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
 
+  // Audience multi-select state
+  const [audienceDropdownOpen, setAudienceDropdownOpen] = useState(false);
+  const [audienceSearch, setAudienceSearch] = useState('');
+  const [selectedAudiences, setSelectedAudiences] = useState<string[]>([]);
+  const audienceDropdownRef = useRef<HTMLDivElement>(null);
+
   // Add Lead Modal state
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
   const [addLeadStep, setAddLeadStep] = useState<1 | 2 | 3>(1);
@@ -153,6 +227,64 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
   useEffect(() => {
     localStorage.setItem(AGENTS_STORAGE_KEY, JSON.stringify(agents));
   }, [agents]);
+
+  // Sync selectedAudiences with newMetric.audience
+  useEffect(() => {
+    if (selectedAudiences.length > 0) {
+      setNewMetric(prev => ({ ...prev, audience: selectedAudiences.join(', ') }));
+    } else {
+      setNewMetric(prev => ({ ...prev, audience: '' }));
+    }
+  }, [selectedAudiences]);
+
+  // Reset audience selection when form is closed
+  useEffect(() => {
+    if (!showAddForm) {
+      setSelectedAudiences([]);
+      setAudienceSearch('');
+      setAudienceDropdownOpen(false);
+    }
+  }, [showAddForm]);
+
+  // Filter audiences based on search
+  const filteredAudiences = useMemo(() => {
+    if (!audienceSearch) return INSURANCE_AUDIENCES;
+    return INSURANCE_AUDIENCES.filter(audience =>
+      audience.toLowerCase().includes(audienceSearch.toLowerCase())
+    );
+  }, [audienceSearch]);
+
+  // Toggle audience selection
+  const toggleAudience = (audience: string) => {
+    setSelectedAudiences(prev =>
+      prev.includes(audience)
+        ? prev.filter(a => a !== audience)
+        : [...prev, audience]
+    );
+  };
+
+  // Remove audience tag
+  const removeAudience = (audience: string) => {
+    setSelectedAudiences(prev => prev.filter(a => a !== audience));
+  };
+
+  // Close audience dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (audienceDropdownRef.current && !audienceDropdownRef.current.contains(event.target as Node)) {
+        setAudienceDropdownOpen(false);
+        setAudienceSearch('');
+      }
+    };
+
+    if (audienceDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [audienceDropdownOpen]);
 
   // Add new agent
   const handleAddAgent = () => {
@@ -1052,22 +1184,115 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     <option value="Solicitation Campaign">Solicitation Campaign</option>
                   </select>
                 ) : field.key === 'audience' ? (
-                  /* Audience Dropdown */
-                  <select
-                    value={newMetric.audience || ''}
-                    onChange={(e) => setNewMetric(prev => ({ ...prev, audience: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
-                  >
-                    <option value="">Select Audience</option>
-                    <option value="Generalized">Generalized</option>
-                    <option value="Insurance Professionals">Insurance Professionals</option>
-                    <option value="Business Owners">Business Owners</option>
-                    <option value="C-Level Executives">C-Level Executives</option>
-                    <option value="HR Managers">HR Managers</option>
-                    <option value="IT Decision Makers">IT Decision Makers</option>
-                    <option value="Sales Professionals">Sales Professionals</option>
-                    <option value="Marketing Professionals">Marketing Professionals</option>
-                  </select>
+                  /* Audience Multi-Select Dropdown */
+                  <div className="relative" ref={audienceDropdownRef}>
+                    {/* Selected Audiences Tags */}
+                    {selectedAudiences.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {selectedAudiences.map(audience => (
+                          <span
+                            key={audience}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#13BCC5]/10 text-[#13BCC5] rounded-full text-xs"
+                          >
+                            {audience.length > 15 ? `${audience.slice(0, 15)}...` : audience}
+                            <button
+                              type="button"
+                              onClick={() => removeAudience(audience)}
+                              className="hover:bg-[#13BCC5]/20 rounded-full p-0.5"
+                            >
+                              <X size={10} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Dropdown Trigger */}
+                    <button
+                      type="button"
+                      onClick={() => setAudienceDropdownOpen(!audienceDropdownOpen)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5] text-left flex items-center justify-between"
+                    >
+                      <span className={selectedAudiences.length === 0 ? 'text-slate-400' : 'text-[#1b1e4c]'}>
+                        {selectedAudiences.length === 0
+                          ? 'Select audiences...'
+                          : `${selectedAudiences.length} selected`}
+                      </span>
+                      <ChevronDown size={14} className={`transition-transform ${audienceDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {audienceDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 overflow-hidden">
+                        {/* Search Input */}
+                        <div className="p-2 border-b border-slate-100">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              value={audienceSearch}
+                              onChange={(e) => setAudienceSearch(e.target.value)}
+                              placeholder="Search audiences..."
+                              className="w-full pl-7 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#13BCC5]/30"
+                              autoFocus
+                            />
+                          </div>
+                        </div>
+
+                        {/* Options List */}
+                        <div className="max-h-48 overflow-y-auto">
+                          {filteredAudiences.length === 0 ? (
+                            <div className="px-3 py-4 text-center text-xs text-slate-500">
+                              No audiences found
+                            </div>
+                          ) : (
+                            filteredAudiences.map(audience => (
+                              <button
+                                key={audience}
+                                type="button"
+                                onClick={() => toggleAudience(audience)}
+                                className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-slate-50 transition-colors ${
+                                  selectedAudiences.includes(audience) ? 'bg-[#13BCC5]/5' : ''
+                                }`}
+                              >
+                                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                                  selectedAudiences.includes(audience)
+                                    ? 'bg-[#13BCC5] border-[#13BCC5]'
+                                    : 'border-slate-300'
+                                }`}>
+                                  {selectedAudiences.includes(audience) && (
+                                    <Check size={10} className="text-white" />
+                                  )}
+                                </div>
+                                <span className="truncate">{audience}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-2 border-t border-slate-100 flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAudiences([])}
+                            className="text-xs text-slate-500 hover:text-red-500"
+                          >
+                            Clear all
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAudienceDropdownOpen(false);
+                              setAudienceSearch('');
+                            }}
+                            className="px-3 py-1 bg-[#13BCC5] text-white rounded text-xs hover:bg-[#0FA8B0]"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : field.key === 'weekEnd' ? (
                   /* Week End Date Picker */
                   <input

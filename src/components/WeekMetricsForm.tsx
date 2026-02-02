@@ -1051,6 +1051,23 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     <option value="Invite to Connect">Invite to Connect</option>
                     <option value="Solicitation Campaign">Solicitation Campaign</option>
                   </select>
+                ) : field.key === 'audience' ? (
+                  /* Audience Dropdown */
+                  <select
+                    value={newMetric.audience || ''}
+                    onChange={(e) => setNewMetric(prev => ({ ...prev, audience: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
+                  >
+                    <option value="">Select Audience</option>
+                    <option value="Generalized">Generalized</option>
+                    <option value="Insurance Professionals">Insurance Professionals</option>
+                    <option value="Business Owners">Business Owners</option>
+                    <option value="C-Level Executives">C-Level Executives</option>
+                    <option value="HR Managers">HR Managers</option>
+                    <option value="IT Decision Makers">IT Decision Makers</option>
+                    <option value="Sales Professionals">Sales Professionals</option>
+                    <option value="Marketing Professionals">Marketing Professionals</option>
+                  </select>
                 ) : (
                   /* Regular Text Input */
                   <input

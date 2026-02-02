@@ -20,11 +20,11 @@ app.use(cors({
 // Google Sheets configuration
 const SPREADSHEET_ID = '1TFtKMMAhevtYMTZb1dmx1Xmd9UjJnMyx4abZx9YIUwE';
 
-// Sheet names (tabs)
+// Sheet names (tabs) - actual Google Sheet tab names
 const SHEETS = {
-  NEWS: 'Insurance News Articles',
-  SCHEDULE: 'Posting Schedule',
-  SUCCESS: 'Customer Success Stories'
+  NEWS: 'insurance_news_log',
+  SCHEDULE: 'Post Scheduling',
+  SUCCESS: 'customer success post defy insurance'
 };
 
 // Initialize Google Sheets API with service account

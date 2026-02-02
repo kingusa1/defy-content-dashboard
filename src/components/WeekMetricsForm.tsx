@@ -25,7 +25,10 @@ import {
   Check,
   CalendarDays,
   Filter,
-  Search
+  Search,
+  Upload,
+  FileSpreadsheet,
+  FileCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import WeekMetricsAnalytics from './WeekMetricsAnalytics';
@@ -178,6 +181,22 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
   const [addLeadValue, setAddLeadValue] = useState('');
   const [addLeadSaving, setAddLeadSaving] = useState(false);
 
+  // CSV Upload state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadStep, setUploadStep] = useState<1 | 2 | 3>(1);
+  const [csvData, setCsvData] = useState<{
+    totalInvited: number;
+    totalAccepted: number;
+    totalMessaged: number;
+    replies: number;
+    acceptanceRate: string;
+    replyPercent: string;
+    weekEnd: string;
+    dateRange: string;
+  } | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const isAdmin = user?.role === 'admin';
 
   // Get rows for selected agent in Add Lead modal
@@ -310,6 +329,165 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
     setAddLeadAgent('');
     setAddLeadSelectedRow(null);
     setAddLeadValue('');
+  };
+
+  // Reset Upload Modal
+  const resetUploadModal = () => {
+    setShowUploadModal(false);
+    setUploadStep(1);
+    setCsvData(null);
+    setUploadedFileName('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Parse CSV file
+  const parseCSV = (csvText: string) => {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) return null;
+
+    // Parse headers
+    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+
+    // Find column indices
+    const invitedIdx = headers.findIndex(h => h === 'invited');
+    const acceptedIdx = headers.findIndex(h => h === 'accepted');
+    const messagedIdx = headers.findIndex(h => h === 'messaged');
+    const repliedIdx = headers.findIndex(h => h === 'replied');
+    const startDateIdx = headers.findIndex(h => h === 'start_date');
+    const endDateIdx = headers.findIndex(h => h === 'end_date');
+
+    // Sum up all daily values
+    let totalInvited = 0;
+    let totalAccepted = 0;
+    let totalMessaged = 0;
+    let totalReplied = 0;
+    let firstDate = '';
+    let lastDate = '';
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
+
+      if (invitedIdx >= 0) totalInvited += parseInt(values[invitedIdx]) || 0;
+      if (acceptedIdx >= 0) totalAccepted += parseInt(values[acceptedIdx]) || 0;
+      if (messagedIdx >= 0) totalMessaged += parseInt(values[messagedIdx]) || 0;
+      if (repliedIdx >= 0) totalReplied += parseInt(values[repliedIdx]) || 0;
+
+      // Track first and last dates
+      if (i === 1 && startDateIdx >= 0) {
+        firstDate = values[startDateIdx].split(',')[0];
+      }
+      if (endDateIdx >= 0) {
+        lastDate = values[endDateIdx].split(',')[0];
+      }
+    }
+
+    // Calculate rates
+    const acceptanceRate = totalInvited > 0
+      ? ((totalAccepted / totalInvited) * 100).toFixed(1) + '%'
+      : '0%';
+    const replyPercent = totalInvited > 0
+      ? ((totalReplied / totalInvited) * 100).toFixed(1) + '%'
+      : '0%';
+
+    // Format week end date (use last date)
+    let weekEnd = '';
+    if (lastDate) {
+      try {
+        const dateParts = lastDate.split('/');
+        if (dateParts.length === 3) {
+          const month = dateParts[0].padStart(2, '0');
+          const day = dateParts[1].padStart(2, '0');
+          const year = dateParts[2];
+          weekEnd = `${year}-${month}-${day}`;
+        }
+      } catch {
+        weekEnd = lastDate;
+      }
+    }
+
+    return {
+      totalInvited,
+      totalAccepted,
+      totalMessaged,
+      replies: totalReplied,
+      acceptanceRate,
+      replyPercent,
+      weekEnd,
+      dateRange: `${firstDate} - ${lastDate}`,
+    };
+  };
+
+  // Handle CSV file upload
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadedFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const parsed = parseCSV(text);
+
+      if (parsed) {
+        setCsvData(parsed);
+        // Pre-fill the newMetric with parsed data
+        setNewMetric(prev => ({
+          ...prev,
+          totalInvited: parsed.totalInvited.toString(),
+          totalAccepted: parsed.totalAccepted.toString(),
+          totalMessaged: parsed.totalMessaged.toString(),
+          replies: parsed.replies.toString(),
+          acceptanceRate: parsed.acceptanceRate,
+          replyPercent: parsed.replyPercent,
+          weekEnd: parsed.weekEnd,
+        }));
+        setUploadStep(2);
+      } else {
+        setError('Failed to parse CSV file. Please check the format.');
+      }
+    };
+    reader.onerror = () => {
+      setError('Failed to read file');
+    };
+    reader.readAsText(file);
+  };
+
+  // Handle upload form submission
+  const handleUploadSubmit = async () => {
+    if (!csvData || !newMetric.campaign) {
+      setError('Please select a campaign type');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      await axios.post(`${API_URL}/metrics/add`, {
+        data: newMetric,
+        userRole: user?.role,
+      });
+
+      setNewMetric({});
+      resetUploadModal();
+      setShowAddForm(false);
+      setSuccess('Data uploaded and row added successfully!');
+      setTimeout(() => setSuccess(null), 3000);
+      fetchMetrics();
+      onRefresh();
+    } catch (err: unknown) {
+      console.error('Error adding metric from CSV:', err);
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.error || 'Failed to add data');
+      } else {
+        setError('Failed to add data');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Handle Add Lead submission
@@ -553,13 +731,22 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
               <span className="hidden sm:inline">Add Lead</span>
             </button>
             {isAdmin && (
-              <button
-                onClick={() => setShowAddForm(!showAddForm)}
-                className="flex items-center gap-1 md:gap-2 px-3 md:px-4 py-2 bg-[#13BCC5] text-white rounded-xl hover:bg-[#0FA8B0] transition-colors text-sm"
-              >
-                <Plus size={14} />
-                <span className="hidden sm:inline">Add Row</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="flex items-center gap-1 md:gap-2 px-3 md:px-4 py-2 bg-purple-500 text-white rounded-xl hover:bg-purple-600 transition-colors text-sm"
+                >
+                  <Upload size={14} />
+                  <span className="hidden sm:inline">Upload Data</span>
+                </button>
+                <button
+                  onClick={() => setShowAddForm(!showAddForm)}
+                  className="flex items-center gap-1 md:gap-2 px-3 md:px-4 py-2 bg-[#13BCC5] text-white rounded-xl hover:bg-[#0FA8B0] transition-colors text-sm"
+                >
+                  <Plus size={14} />
+                  <span className="hidden sm:inline">Add Row</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -1085,6 +1272,342 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                       <>
                         <Check size={18} />
                         Add Lead to Google Sheet
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Data Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                    <FileSpreadsheet className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-lg">Upload Campaign Data</h4>
+                    <p className="text-white/80 text-sm">Step {uploadStep} of 3</p>
+                  </div>
+                </div>
+                <button
+                  onClick={resetUploadModal}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              {/* Progress Bar */}
+              <div className="flex gap-2 mt-4">
+                {[1, 2, 3].map((step) => (
+                  <div
+                    key={step}
+                    className={`flex-1 h-1.5 rounded-full transition-all ${
+                      step <= uploadStep ? 'bg-white' : 'bg-white/30'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {/* Step 1: Upload File */}
+              {uploadStep === 1 && (
+                <div className="space-y-4">
+                  <div>
+                    <h5 className="font-bold text-[#1b1e4c] mb-1">Upload CSV File</h5>
+                    <p className="text-sm text-slate-500">
+                      Upload your LinkedIn campaign daily activity CSV file
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-purple-200 rounded-xl p-8 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-all"
+                  >
+                    <Upload className="w-12 h-12 text-purple-400 mx-auto mb-3" />
+                    <p className="font-medium text-[#1b1e4c]">Click to upload CSV</p>
+                    <p className="text-sm text-slate-500 mt-1">or drag and drop</p>
+                    <p className="text-xs text-slate-400 mt-2">
+                      Supports: CSV files from LinkedIn Helper
+                    </p>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <h6 className="font-medium text-slate-700 text-sm mb-2">Expected columns:</h6>
+                    <div className="flex flex-wrap gap-2">
+                      {['invited', 'accepted', 'messaged', 'replied', 'start_date', 'end_date'].map(col => (
+                        <span key={col} className="px-2 py-1 bg-white rounded text-xs text-slate-600 border border-slate-200">
+                          {col}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Review Data & Select Campaign Type */}
+              {uploadStep === 2 && csvData && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h5 className="font-bold text-[#1b1e4c] mb-1">Review Extracted Data</h5>
+                      <p className="text-sm text-slate-500">
+                        Data from: <span className="font-medium text-purple-600">{uploadedFileName}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setUploadStep(1);
+                        setCsvData(null);
+                      }}
+                      className="flex items-center gap-1 text-sm text-slate-600 hover:text-[#1b1e4c]"
+                    >
+                      <ArrowLeft size={16} />
+                      Back
+                    </button>
+                  </div>
+
+                  {/* Extracted Data Summary */}
+                  <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl p-4 border border-purple-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <FileCheck className="w-5 h-5 text-purple-500" />
+                      <span className="font-medium text-purple-700">Extracted Data</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <p className="text-xs text-slate-500">Total Invited</p>
+                        <p className="text-xl font-bold text-[#1b1e4c]">{csvData.totalInvited}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <p className="text-xs text-slate-500">Total Accepted</p>
+                        <p className="text-xl font-bold text-emerald-600">{csvData.totalAccepted}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <p className="text-xs text-slate-500">Acceptance Rate</p>
+                        <p className="text-xl font-bold text-blue-600">{csvData.acceptanceRate}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <p className="text-xs text-slate-500">Total Replies</p>
+                        <p className="text-xl font-bold text-amber-600">{csvData.replies}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <p className="text-xs text-slate-500">Messages Sent</p>
+                        <p className="text-xl font-bold text-purple-600">{csvData.totalMessaged}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <p className="text-xs text-slate-500">Reply Rate</p>
+                        <p className="text-xl font-bold text-pink-600">{csvData.replyPercent}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-purple-100">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-500">Date Range:</span>
+                        <span className="font-medium text-[#1b1e4c]">{csvData.dateRange}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm mt-1">
+                        <span className="text-slate-500">Week End:</span>
+                        <span className="font-medium text-[#1b1e4c]">{csvData.weekEnd}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Campaign Type Selection */}
+                  <div>
+                    <h6 className="font-medium text-[#1b1e4c] mb-2">What type of campaign is this?</h6>
+                    <div className="grid gap-3">
+                      <button
+                        onClick={() => {
+                          setNewMetric(prev => ({ ...prev, campaign: 'Invite to Connect' }));
+                          setUploadStep(3);
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition-all hover:border-purple-500 hover:bg-purple-50 ${
+                          newMetric.campaign === 'Invite to Connect' ? 'border-purple-500 bg-purple-50' : 'border-slate-200'
+                        }`}
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                          <UserPlus className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-[#1b1e4c]">Invite to Connect</p>
+                          <p className="text-xs text-slate-500">Connection request campaigns</p>
+                        </div>
+                        <ArrowRight size={20} className="text-slate-400" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNewMetric(prev => ({ ...prev, campaign: 'Solicitation Campaign' }));
+                          setUploadStep(3);
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition-all hover:border-purple-500 hover:bg-purple-50 ${
+                          newMetric.campaign === 'Solicitation Campaign' ? 'border-purple-500 bg-purple-50' : 'border-slate-200'
+                        }`}
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
+                          <Target className="w-6 h-6 text-amber-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-[#1b1e4c]">Solicitation Campaign</p>
+                          <p className="text-xs text-slate-500">Direct outreach & messaging</p>
+                        </div>
+                        <ArrowRight size={20} className="text-slate-400" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Fill Remaining Fields */}
+              {uploadStep === 3 && csvData && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h5 className="font-bold text-[#1b1e4c] mb-1">Complete Details</h5>
+                      <p className="text-sm text-slate-500">Fill in the remaining fields</p>
+                    </div>
+                    <button
+                      onClick={() => setUploadStep(2)}
+                      className="flex items-center gap-1 text-sm text-slate-600 hover:text-[#1b1e4c]"
+                    >
+                      <ArrowLeft size={16} />
+                      Back
+                    </button>
+                  </div>
+
+                  {/* Auto-filled Summary */}
+                  <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-200">
+                    <div className="flex items-center gap-2 text-emerald-700 text-sm">
+                      <CheckCircle2 size={16} />
+                      <span className="font-medium">Auto-filled from CSV:</span>
+                    </div>
+                    <p className="text-xs text-emerald-600 mt-1">
+                      Invited: {csvData.totalInvited} • Accepted: {csvData.totalAccepted} •
+                      Replies: {csvData.replies} • Rate: {csvData.acceptanceRate}
+                    </p>
+                  </div>
+
+                  {/* Campaign Badge */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-600">Campaign:</span>
+                    <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
+                      {newMetric.campaign}
+                    </span>
+                  </div>
+
+                  {/* Remaining Fields */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Agent *</label>
+                      <select
+                        value={newMetric.agent || ''}
+                        onChange={(e) => setNewMetric(prev => ({ ...prev, agent: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                      >
+                        <option value="">Select Agent</option>
+                        {agents.map(agent => (
+                          <option key={agent} value={agent}>{agent}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                      <select
+                        value={newMetric.status || ''}
+                        onChange={(e) => setNewMetric(prev => ({ ...prev, status: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                      >
+                        <option value="">Select Status</option>
+                        <option value="Active">Active</option>
+                        <option value="Not Active">Not Active</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Audience</label>
+                      <select
+                        value={newMetric.audience || ''}
+                        onChange={(e) => setNewMetric(prev => ({ ...prev, audience: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                      >
+                        <option value="">Select Audience</option>
+                        {INSURANCE_AUDIENCES.map(audience => (
+                          <option key={audience} value={audience}>{audience}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Defy Lead</label>
+                      <input
+                        type="text"
+                        value={newMetric.defyLead || ''}
+                        onChange={(e) => setNewMetric(prev => ({ ...prev, defyLead: e.target.value }))}
+                        placeholder="Enter lead name..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Location</label>
+                      <input
+                        type="text"
+                        value={newMetric.location || ''}
+                        onChange={(e) => setNewMetric(prev => ({ ...prev, location: e.target.value }))}
+                        placeholder="e.g., USA, Global"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Message</label>
+                      <input
+                        type="text"
+                        value={newMetric.message || ''}
+                        onChange={(e) => setNewMetric(prev => ({ ...prev, message: e.target.value }))}
+                        placeholder="Message template..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Target</label>
+                      <input
+                        type="text"
+                        value={newMetric.target || ''}
+                        onChange={(e) => setNewMetric(prev => ({ ...prev, target: e.target.value }))}
+                        placeholder="Target audience..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    onClick={handleUploadSubmit}
+                    disabled={saving || !newMetric.agent}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-500 text-white rounded-xl hover:bg-purple-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check size={18} />
+                        Save to Google Sheet
                       </>
                     )}
                   </button>

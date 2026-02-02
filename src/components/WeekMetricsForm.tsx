@@ -342,13 +342,36 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
     }
   };
 
+  // Parse CSV line handling quoted fields with commas
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+
+    return result;
+  };
+
   // Parse CSV file
   const parseCSV = (csvText: string) => {
     const lines = csvText.trim().split('\n');
     if (lines.length < 2) return null;
 
-    // Parse headers
-    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+    // Parse headers using proper CSV parsing
+    const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/"/g, '').trim());
 
     // Find column indices
     const invitedIdx = headers.findIndex(h => h === 'invited');
@@ -367,40 +390,64 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
     let lastDate = '';
 
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
+      // Skip empty lines
+      if (!lines[i].trim()) continue;
 
-      if (invitedIdx >= 0) totalInvited += parseInt(values[invitedIdx]) || 0;
-      if (acceptedIdx >= 0) totalAccepted += parseInt(values[acceptedIdx]) || 0;
-      if (messagedIdx >= 0) totalMessaged += parseInt(values[messagedIdx]) || 0;
-      if (repliedIdx >= 0) totalReplied += parseInt(values[repliedIdx]) || 0;
+      const values = parseCSVLine(lines[i]);
+
+      if (invitedIdx >= 0 && values[invitedIdx]) {
+        totalInvited += parseInt(values[invitedIdx]) || 0;
+      }
+      if (acceptedIdx >= 0 && values[acceptedIdx]) {
+        totalAccepted += parseInt(values[acceptedIdx]) || 0;
+      }
+      if (messagedIdx >= 0 && values[messagedIdx]) {
+        totalMessaged += parseInt(values[messagedIdx]) || 0;
+      }
+      if (repliedIdx >= 0 && values[repliedIdx]) {
+        totalReplied += parseInt(values[repliedIdx]) || 0;
+      }
 
       // Track first and last dates
-      if (i === 1 && startDateIdx >= 0) {
-        firstDate = values[startDateIdx].split(',')[0];
+      if (!firstDate && startDateIdx >= 0 && values[startDateIdx]) {
+        firstDate = values[startDateIdx];
       }
-      if (endDateIdx >= 0) {
-        lastDate = values[endDateIdx].split(',')[0];
+      if (endDateIdx >= 0 && values[endDateIdx]) {
+        lastDate = values[endDateIdx];
       }
     }
 
     // Calculate rates
+    // Acceptance Rate = accepted / invited
     const acceptanceRate = totalInvited > 0
       ? ((totalAccepted / totalInvited) * 100).toFixed(1) + '%'
       : '0%';
-    const replyPercent = totalInvited > 0
-      ? ((totalReplied / totalInvited) * 100).toFixed(1) + '%'
+
+    // Reply Percent = replied / messaged (NOT replied / invited!)
+    const replyPercent = totalMessaged > 0
+      ? ((totalReplied / totalMessaged) * 100).toFixed(1) + '%'
       : '0%';
 
     // Format week end date (use last date)
     let weekEnd = '';
     if (lastDate) {
       try {
-        const dateParts = lastDate.split('/');
-        if (dateParts.length === 3) {
-          const month = dateParts[0].padStart(2, '0');
-          const day = dateParts[1].padStart(2, '0');
-          const year = dateParts[2];
-          weekEnd = `${year}-${month}-${day}`;
+        // Handle various date formats: MM/DD/YYYY, YYYY-MM-DD, etc.
+        const dateStr = lastDate.replace(/"/g, '').trim();
+
+        if (dateStr.includes('/')) {
+          const dateParts = dateStr.split('/');
+          if (dateParts.length === 3) {
+            const month = dateParts[0].padStart(2, '0');
+            const day = dateParts[1].padStart(2, '0');
+            const year = dateParts[2].length === 2 ? '20' + dateParts[2] : dateParts[2];
+            weekEnd = `${year}-${month}-${day}`;
+          }
+        } else if (dateStr.includes('-')) {
+          // Already in YYYY-MM-DD format
+          weekEnd = dateStr;
+        } else {
+          weekEnd = dateStr;
         }
       } catch {
         weekEnd = lastDate;

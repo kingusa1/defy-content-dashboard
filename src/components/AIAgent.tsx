@@ -26,7 +26,7 @@ interface AIAgentProps {
 }
 
 // Pollinations AI API - free, no API key required
-const POLLINATIONS_API = 'https://text.pollinations.ai/';
+const POLLINATIONS_TEXT_API = 'https://text.pollinations.ai/';
 
 // System prompt for the AI
 const getSystemPrompt = (data: ContentData) => `You are an advanced AI business analyst and decision-making assistant for Defy Insurance, a cutting-edge insurance company. You have access to real-time content management data and must provide strategic insights, predictions, and recommendations.
@@ -110,51 +110,31 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
     setShowQuickActions(false);
 
     try {
-      // Build conversation context
-      const conversationContext = messages.length > 0
-        ? '\n\nPrevious conversation:\n' + messages.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')
+      // Build a concise prompt for the AI
+      const recentMessages = messages.slice(-4); // Keep last 4 messages for context
+      const conversationContext = recentMessages.length > 0
+        ? recentMessages.map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content.slice(0, 500)}`).join('\n\n')
         : '';
 
-      // Create the full prompt
-      const fullPrompt = `${getSystemPrompt(data)}${conversationContext}\n\nUser: ${messageText}\n\nAssistant:`;
+      // Create a shorter system context
+      const shortContext = `You are Defy Insurance AI Assistant. Data: ${data.stats.totalArticles} articles (${data.stats.publishedPosts} published, ${data.stats.scheduledPosts} scheduled), ${data.stats.totalSuccessStories} stories (${data.stats.completedStories} completed). Be helpful, concise, and actionable.`;
 
-      // Call Pollinations API directly (free, no key needed)
-      const response = await fetch(POLLINATIONS_API, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: 'system', content: getSystemPrompt(data) },
-            ...messages.map(m => ({ role: m.role, content: m.content })),
-            { role: 'user', content: messageText }
-          ],
-          model: 'openai',
-          seed: Math.floor(Math.random() * 1000000)
-        }),
-      });
+      // Build the prompt
+      const prompt = conversationContext
+        ? `${shortContext}\n\nRecent conversation:\n${conversationContext}\n\nUser: ${messageText}\n\nAI:`
+        : `${shortContext}\n\nUser: ${messageText}\n\nAI:`;
+
+      // Use simple GET endpoint - most reliable
+      const encodedPrompt = encodeURIComponent(prompt);
+      const url = `${POLLINATIONS_TEXT_API}${encodedPrompt}?model=openai&seed=${Date.now()}`;
+
+      const response = await fetch(url);
 
       if (!response.ok) {
-        // Fallback to simple GET endpoint
-        const simpleResponse = await fetch(`${POLLINATIONS_API}${encodeURIComponent(fullPrompt.slice(0, 4000))}?model=openai&seed=${Date.now()}`);
-        if (!simpleResponse.ok) {
-          throw new Error('AI service unavailable');
-        }
-        const aiResponse = await simpleResponse.text();
-
-        const assistantMessage: AIMessage = {
-          id: `msg-${Date.now()}-ai`,
-          role: 'assistant',
-          content: aiResponse,
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        return;
+        throw new Error(`HTTP ${response.status}`);
       }
 
-      const result = await response.json();
-      const aiResponse = result.choices?.[0]?.message?.content || result || 'No response received';
+      const aiResponse = await response.text();
 
       const assistantMessage: AIMessage = {
         id: `msg-${Date.now()}-ai`,

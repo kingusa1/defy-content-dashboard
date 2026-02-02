@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import WeekMetricsAdvancedAnalytics from './WeekMetricsAdvancedAnalytics';
+import InsuranceDataAnalytics from './InsuranceDataAnalytics';
 import AISummary from './AISummary';
 import axios from 'axios';
 
@@ -151,7 +152,7 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
   const [editedMetrics, setEditedMetrics] = useState<Record<string, Partial<WeekMetric>>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [newMetric, setNewMetric] = useState<Partial<WeekMetric>>({});
-  const [activeView, setActiveView] = useState<'data' | 'analytics'>('analytics');
+  const [activeView, setActiveView] = useState<'data' | 'analytics' | 'insurance'>('insurance');
 
   // Agent filter state
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
@@ -1795,7 +1796,18 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
       )}
 
       {/* View Toggle */}
-      <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-fit">
+      <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-fit flex-wrap">
+        <button
+          onClick={() => setActiveView('insurance')}
+          className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeView === 'insurance'
+              ? 'bg-gradient-to-r from-[#13BCC5] to-purple-500 text-white shadow-sm'
+              : 'text-slate-600 hover:text-[#1b1e4c]'
+          }`}
+        >
+          <TrendingUp size={16} />
+          <span className="hidden sm:inline">Insurance Analytics</span>
+        </button>
         <button
           onClick={() => setActiveView('analytics')}
           className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -1805,7 +1817,7 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
           }`}
         >
           <BarChart3 size={16} />
-          <span className="hidden sm:inline">Analytics</span>
+          <span className="hidden sm:inline">Quick Analytics</span>
         </button>
         <button
           onClick={() => setActiveView('data')}
@@ -2034,7 +2046,12 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
         </div>
       )}
 
-      {/* Analytics View - Enterprise Grade */}
+      {/* Insurance Data Analytics - Full Enterprise Dashboard */}
+      {activeView === 'insurance' && (
+        <InsuranceDataAnalytics metrics={filteredMetrics} />
+      )}
+
+      {/* Quick Analytics View */}
       {activeView === 'analytics' && (
         <WeekMetricsAdvancedAnalytics metrics={filteredMetrics} />
       )}

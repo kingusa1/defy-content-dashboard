@@ -1068,6 +1068,14 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     <option value="Sales Professionals">Sales Professionals</option>
                     <option value="Marketing Professionals">Marketing Professionals</option>
                   </select>
+                ) : field.key === 'weekEnd' ? (
+                  /* Week End Date Picker */
+                  <input
+                    type="date"
+                    value={newMetric.weekEnd || ''}
+                    onChange={(e) => setNewMetric(prev => ({ ...prev, weekEnd: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
+                  />
                 ) : (
                   /* Regular Text Input */
                   <input

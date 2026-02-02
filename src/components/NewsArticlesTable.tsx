@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ExternalLink, Check, Linkedin, Twitter } from 'lucide-react';
+import { Search, ExternalLink, Check, Linkedin, Twitter, ChevronDown, ChevronUp } from 'lucide-react';
 import type { NewsArticle } from '../types/content';
 import { formatDate, getRelativeTime } from '../utils/dateUtils';
+import AISummary from './AISummary';
 
 interface NewsArticlesTableProps {
   articles: NewsArticle[];
@@ -149,44 +150,91 @@ const NewsArticlesTable: React.FC<NewsArticlesTableProps> = ({ articles }) => {
                           <Twitter size={16} className="text-sky-500" />
                         )}
                       </button>
+                      <button
+                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors ml-1"
+                        title="View details"
+                      >
+                        {expandedId === article.id ? (
+                          <ChevronUp size={16} className="text-[#13BCC5]" />
+                        ) : (
+                          <ChevronDown size={16} className="text-slate-400" />
+                        )}
+                      </button>
                     </div>
                   </td>
                 </tr>
                 {/* Expanded Content */}
                 {expandedId === article.id && (
                   <tr>
-                    <td colSpan={4} className="px-6 py-4 bg-slate-50">
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <Linkedin size={16} className="text-blue-600" />
-                            <span className="text-sm font-semibold text-slate-700">LinkedIn Post</span>
-                            <button
-                              onClick={() => copyToClipboard(article.linkedinPost, article.id, 'linkedin')}
-                              className="ml-auto text-xs text-[#13BCC5] hover:underline"
-                            >
-                              Copy
-                            </button>
+                    <td colSpan={4} className="px-6 py-4 bg-gradient-to-b from-slate-50 to-white border-l-4 border-[#13BCC5]">
+                      <div className="space-y-4">
+                        {/* AI Summary */}
+                        <AISummary
+                          content={`${article.linkedinPost || ''} ${article.twitterPost || ''}`}
+                          type="article"
+                          title={article.title}
+                        />
+
+                        {/* Post Content */}
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="bg-white rounded-xl border border-blue-100 overflow-hidden">
+                            <div className="flex items-center gap-2 p-3 bg-blue-50 border-b border-blue-100">
+                              <Linkedin size={18} className="text-blue-600" />
+                              <span className="text-sm font-semibold text-blue-900">LinkedIn Post</span>
+                              <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full ml-auto">
+                                {article.linkedinPost?.length || 0} chars
+                              </span>
+                              <button
+                                onClick={() => copyToClipboard(article.linkedinPost, article.id, 'linkedin')}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                              >
+                                {copiedId === `${article.id}-linkedin` ? '✓ Copied!' : 'Copy'}
+                              </button>
+                            </div>
+                            <div className="p-4 text-sm text-slate-700 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                              {article.linkedinPost || 'No LinkedIn post content'}
+                            </div>
                           </div>
-                          <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-600 max-h-48 overflow-y-auto whitespace-pre-wrap">
-                            {article.linkedinPost || 'No LinkedIn post content'}
+
+                          <div className="bg-white rounded-xl border border-sky-100 overflow-hidden">
+                            <div className="flex items-center gap-2 p-3 bg-sky-50 border-b border-sky-100">
+                              <Twitter size={18} className="text-sky-500" />
+                              <span className="text-sm font-semibold text-sky-900">Twitter Post</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ml-auto ${
+                                (article.twitterPost?.length || 0) > 280
+                                  ? 'text-red-600 bg-red-100'
+                                  : 'text-sky-600 bg-sky-100'
+                              }`}>
+                                {article.twitterPost?.length || 0}/280
+                              </span>
+                              <button
+                                onClick={() => copyToClipboard(article.twitterPost, article.id, 'twitter')}
+                                className="text-xs text-sky-600 hover:text-sky-800 font-medium"
+                              >
+                                {copiedId === `${article.id}-twitter` ? '✓ Copied!' : 'Copy'}
+                              </button>
+                            </div>
+                            <div className="p-4 text-sm text-slate-700 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                              {article.twitterPost || 'No Twitter post content'}
+                            </div>
                           </div>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <Twitter size={16} className="text-sky-500" />
-                            <span className="text-sm font-semibold text-slate-700">Twitter Post</span>
-                            <button
-                              onClick={() => copyToClipboard(article.twitterPost, article.id, 'twitter')}
-                              className="ml-auto text-xs text-[#13BCC5] hover:underline"
+
+                        {/* Article Link */}
+                        {article.articleLink && (
+                          <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-lg">
+                            <ExternalLink size={16} className="text-slate-500" />
+                            <span className="text-sm text-slate-600">Source:</span>
+                            <a
+                              href={article.articleLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-[#13BCC5] hover:underline truncate flex-1"
                             >
-                              Copy
-                            </button>
+                              {article.articleLink}
+                            </a>
                           </div>
-                          <div className="bg-white p-3 rounded-lg border border-slate-200 text-sm text-slate-600 max-h-48 overflow-y-auto whitespace-pre-wrap">
-                            {article.twitterPost || 'No Twitter post content'}
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </td>
                   </tr>

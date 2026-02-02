@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { CheckCircle, Clock, Linkedin, Twitter, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, Clock, Linkedin, Twitter, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SuccessStory } from '../types/content';
 import { formatDate } from '../utils/dateUtils';
+import AISummary from './AISummary';
 
 interface SuccessStoriesTableProps {
   stories: SuccessStory[];
@@ -96,62 +97,65 @@ const SuccessStoriesTable: React.FC<SuccessStoriesTableProps> = ({ stories }) =>
 
             {/* Expanded Content */}
             {expandedId === story.id && (
-              <div className="px-4 pb-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  {/* Twitter Caption */}
-                  <div className="bg-slate-50 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Twitter size={18} className="text-sky-500" />
-                      <span className="font-medium text-slate-700">Twitter Caption</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyToClipboard(story.twitterCaption, story.id, 'twitter');
-                        }}
-                        className="ml-auto flex items-center gap-1 text-xs text-[#13BCC5] hover:underline"
-                      >
-                        {copiedId === `${story.id}-twitter` ? (
-                          <>
-                            <Check size={14} /> Copied!
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={14} /> Copy
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <p className="text-sm text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                      {story.twitterCaption || 'No Twitter caption'}
-                    </p>
-                  </div>
+              <div className="px-4 pb-4 border-l-4 border-[#13BCC5] ml-4 bg-gradient-to-r from-slate-50 to-white">
+                <div className="space-y-4 py-4">
+                  {/* AI Summary */}
+                  <AISummary
+                    content={`${story.twitterCaption || ''} ${story.linkedinCaption || ''}`}
+                    type="story"
+                  />
 
-                  {/* LinkedIn Caption */}
-                  <div className="bg-slate-50 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Linkedin size={18} className="text-blue-600" />
-                      <span className="font-medium text-slate-700">LinkedIn Caption</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyToClipboard(story.linkedinCaption, story.id, 'linkedin');
-                        }}
-                        className="ml-auto flex items-center gap-1 text-xs text-[#13BCC5] hover:underline"
-                      >
-                        {copiedId === `${story.id}-linkedin` ? (
-                          <>
-                            <Check size={14} /> Copied!
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={14} /> Copy
-                          </>
-                        )}
-                      </button>
+                  {/* Post Content */}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {/* Twitter Caption */}
+                    <div className="bg-white rounded-xl border border-sky-100 overflow-hidden">
+                      <div className="flex items-center gap-2 p-3 bg-sky-50 border-b border-sky-100">
+                        <Twitter size={18} className="text-sky-500" />
+                        <span className="text-sm font-semibold text-sky-900">Twitter Caption</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ml-auto ${
+                          (story.twitterCaption?.length || 0) > 280
+                            ? 'text-red-600 bg-red-100'
+                            : 'text-sky-600 bg-sky-100'
+                        }`}>
+                          {story.twitterCaption?.length || 0}/280
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(story.twitterCaption, story.id, 'twitter');
+                          }}
+                          className="text-xs text-sky-600 hover:text-sky-800 font-medium"
+                        >
+                          {copiedId === `${story.id}-twitter` ? '✓ Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                      <div className="p-4 text-sm text-slate-700 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                        {story.twitterCaption || 'No Twitter caption'}
+                      </div>
                     </div>
-                    <p className="text-sm text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                      {story.linkedinCaption || 'No LinkedIn caption'}
-                    </p>
+
+                    {/* LinkedIn Caption */}
+                    <div className="bg-white rounded-xl border border-blue-100 overflow-hidden">
+                      <div className="flex items-center gap-2 p-3 bg-blue-50 border-b border-blue-100">
+                        <Linkedin size={18} className="text-blue-600" />
+                        <span className="text-sm font-semibold text-blue-900">LinkedIn Caption</span>
+                        <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full ml-auto">
+                          {story.linkedinCaption?.length || 0} chars
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(story.linkedinCaption, story.id, 'linkedin');
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          {copiedId === `${story.id}-linkedin` ? '✓ Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                      <div className="p-4 text-sm text-slate-700 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                        {story.linkedinCaption || 'No LinkedIn caption'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -22,10 +22,13 @@ import {
   UserPlus,
   ArrowRight,
   ArrowLeft,
-  Check
+  Check,
+  CalendarDays,
+  Filter
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import WeekMetricsAnalytics from './WeekMetricsAnalytics';
+import AISummary from './AISummary';
 import axios from 'axios';
 
 // Default agents list
@@ -89,6 +92,10 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
   const [newAgentName, setNewAgentName] = useState('');
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
 
+  // Date filter state
+  const [selectedDate, setSelectedDate] = useState<string>('all');
+  const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
+
   // Add Lead Modal state
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
   const [addLeadStep, setAddLeadStep] = useState<1 | 2 | 3>(1);
@@ -107,16 +114,40 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
     );
   }, [metrics, addLeadAgent]);
 
-  // Filter metrics based on selected agent
+  // Get unique dates from metrics for date filter dropdown
+  const uniqueDates = useMemo(() => {
+    const dates = metrics
+      .map(m => m.weekEnd)
+      .filter(Boolean)
+      .filter((date, index, self) => self.indexOf(date) === index)
+      .sort((a, b) => {
+        // Sort dates in descending order (newest first)
+        const dateA = new Date(a);
+        const dateB = new Date(b);
+        return dateB.getTime() - dateA.getTime();
+      });
+    return dates;
+  }, [metrics]);
+
+  // Filter metrics based on selected agent AND date
   const filteredMetrics = useMemo(() => {
-    if (selectedAgent === 'all') {
-      return metrics;
+    let filtered = metrics;
+
+    // Filter by agent
+    if (selectedAgent !== 'all') {
+      filtered = filtered.filter(m =>
+        m.agent?.toLowerCase().includes(selectedAgent.toLowerCase()) ||
+        m.defyLead?.toLowerCase().includes(selectedAgent.toLowerCase())
+      );
     }
-    return metrics.filter(m =>
-      m.agent?.toLowerCase().includes(selectedAgent.toLowerCase()) ||
-      m.defyLead?.toLowerCase().includes(selectedAgent.toLowerCase())
-    );
-  }, [metrics, selectedAgent]);
+
+    // Filter by date
+    if (selectedDate !== 'all') {
+      filtered = filtered.filter(m => m.weekEnd === selectedDate);
+    }
+
+    return filtered;
+  }, [metrics, selectedAgent, selectedDate]);
 
   // Save agents to localStorage when changed
   useEffect(() => {
@@ -402,130 +433,240 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
         </div>
       </div>
 
-      {/* Agent Filter Dropdown */}
+      {/* Filters Section */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-4">
+          {/* Filter Header */}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
-              <UserCircle className="w-5 h-5 text-white" />
+              <Filter className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h4 className="font-bold text-[#1b1e4c]">Filter by Agent</h4>
+              <h4 className="font-bold text-[#1b1e4c]">Filters</h4>
               <p className="text-xs text-slate-500">
-                {selectedAgent === 'all'
+                {selectedAgent === 'all' && selectedDate === 'all'
                   ? `Showing all ${metrics.length} records`
-                  : `Showing ${filteredMetrics.length} of ${metrics.length} records for ${selectedAgent}`
+                  : `Showing ${filteredMetrics.length} of ${metrics.length} records`
                 }
+                {selectedAgent !== 'all' && ` • Agent: ${selectedAgent}`}
+                {selectedDate !== 'all' && ` • Date: ${selectedDate}`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Agent Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-[#1b1e4c] hover:bg-slate-200 transition-colors min-w-[160px] justify-between"
-              >
-                <span className="truncate">
-                  {selectedAgent === 'all' ? 'All Agents' : selectedAgent}
-                </span>
-                <ChevronDown size={16} className={`transition-transform ${agentDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
+          {/* Filter Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            {/* Agent Filter */}
+            <div className="flex items-center gap-2">
+              <UserCircle size={16} className="text-slate-400" />
+              <span className="text-sm text-slate-600 font-medium">Agent:</span>
 
-              {/* Dropdown Menu */}
-              {agentDropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
-                  <div className="max-h-60 overflow-y-auto">
-                    {/* All Agents Option */}
-                    <button
-                      onClick={() => {
-                        setSelectedAgent('all');
-                        setAgentDropdownOpen(false);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${
-                        selectedAgent === 'all' ? 'bg-[#13BCC5]/10 text-[#13BCC5]' : 'text-[#1b1e4c]'
-                      }`}
-                    >
-                      <Users size={16} />
-                      <span className="font-medium">All Agents</span>
-                      {selectedAgent === 'all' && <CheckCircle2 size={14} className="ml-auto" />}
-                    </button>
+              {/* Agent Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setAgentDropdownOpen(!agentDropdownOpen);
+                    setDateDropdownOpen(false);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-[#1b1e4c] hover:bg-slate-200 transition-colors min-w-[160px] justify-between"
+                >
+                  <span className="truncate">
+                    {selectedAgent === 'all' ? 'All Agents' : selectedAgent}
+                  </span>
+                  <ChevronDown size={16} className={`transition-transform ${agentDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
 
-                    <div className="border-t border-slate-100" />
-
-                    {/* Individual Agents */}
-                    {agents.map((agent) => (
-                      <div
-                        key={agent}
+                {/* Agent Dropdown Menu */}
+                {agentDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                    <div className="max-h-60 overflow-y-auto">
+                      {/* All Agents Option */}
+                      <button
+                        onClick={() => {
+                          setSelectedAgent('all');
+                          setAgentDropdownOpen(false);
+                        }}
                         className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${
-                          selectedAgent === agent ? 'bg-[#13BCC5]/10 text-[#13BCC5]' : 'text-[#1b1e4c]'
+                          selectedAgent === 'all' ? 'bg-[#13BCC5]/10 text-[#13BCC5]' : 'text-[#1b1e4c]'
                         }`}
                       >
-                        <button
-                          onClick={() => {
-                            setSelectedAgent(agent);
-                            setAgentDropdownOpen(false);
-                          }}
-                          className="flex items-center gap-3 flex-1"
+                        <Users size={16} />
+                        <span className="font-medium">All Agents</span>
+                        {selectedAgent === 'all' && <CheckCircle2 size={14} className="ml-auto" />}
+                      </button>
+
+                      <div className="border-t border-slate-100" />
+
+                      {/* Individual Agents */}
+                      {agents.map((agent) => (
+                        <div
+                          key={agent}
+                          className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${
+                            selectedAgent === agent ? 'bg-[#13BCC5]/10 text-[#13BCC5]' : 'text-[#1b1e4c]'
+                          }`}
                         >
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#1b1e4c] to-[#2a2e5c] flex items-center justify-center text-white text-xs font-bold">
-                            {agent.charAt(0).toUpperCase()}
-                          </div>
-                          <span className="font-medium">{agent}</span>
-                          {selectedAgent === agent && <CheckCircle2 size={14} className="ml-auto" />}
-                        </button>
-                        {isAdmin && (
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveAgent(agent);
+                            onClick={() => {
+                              setSelectedAgent(agent);
+                              setAgentDropdownOpen(false);
                             }}
-                            className="p-1 hover:bg-red-100 rounded text-slate-400 hover:text-red-500 transition-colors"
+                            className="flex items-center gap-3 flex-1"
                           >
-                            <X size={14} />
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#1b1e4c] to-[#2a2e5c] flex items-center justify-center text-white text-xs font-bold">
+                              {agent.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-medium">{agent}</span>
+                            {selectedAgent === agent && <CheckCircle2 size={14} className="ml-auto" />}
                           </button>
-                        )}
-                      </div>
-                    ))}
+                          {isAdmin && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveAgent(agent);
+                              }}
+                              className="p-1 hover:bg-red-100 rounded text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
 
-                    {/* Add New Agent Button */}
-                    {isAdmin && (
-                      <>
-                        <div className="border-t border-slate-100" />
-                        <button
-                          onClick={() => {
-                            setShowAddAgentModal(true);
-                            setAgentDropdownOpen(false);
-                          }}
-                          className="w-full px-4 py-3 text-left text-sm flex items-center gap-3 text-[#13BCC5] hover:bg-[#13BCC5]/5 transition-colors"
-                        >
-                          <PlusCircle size={16} />
-                          <span className="font-medium">Add New Agent</span>
-                        </button>
-                      </>
-                    )}
+                      {/* Add New Agent Button */}
+                      {isAdmin && (
+                        <>
+                          <div className="border-t border-slate-100" />
+                          <button
+                            onClick={() => {
+                              setShowAddAgentModal(true);
+                              setAgentDropdownOpen(false);
+                            }}
+                            className="w-full px-4 py-3 text-left text-sm flex items-center gap-3 text-[#13BCC5] hover:bg-[#13BCC5]/5 transition-colors"
+                          >
+                            <PlusCircle size={16} />
+                            <span className="font-medium">Add New Agent</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
-            {/* Quick agent chips */}
-            <div className="hidden md:flex items-center gap-2">
-              {agents.slice(0, 3).map((agent) => (
+            {/* Date Filter */}
+            <div className="flex items-center gap-2">
+              <CalendarDays size={16} className="text-slate-400" />
+              <span className="text-sm text-slate-600 font-medium">Date:</span>
+
+              {/* Date Dropdown */}
+              <div className="relative">
                 <button
-                  key={agent}
-                  onClick={() => setSelectedAgent(selectedAgent === agent ? 'all' : agent)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    selectedAgent === agent
-                      ? 'bg-[#13BCC5] text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  onClick={() => {
+                    setDateDropdownOpen(!dateDropdownOpen);
+                    setAgentDropdownOpen(false);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-[#1b1e4c] hover:bg-slate-200 transition-colors min-w-[160px] justify-between"
                 >
-                  {agent.split(' ')[0]}
+                  <span className="truncate">
+                    {selectedDate === 'all' ? 'All Dates' : selectedDate}
+                  </span>
+                  <ChevronDown size={16} className={`transition-transform ${dateDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
-              ))}
+
+                {/* Date Dropdown Menu */}
+                {dateDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                    <div className="max-h-60 overflow-y-auto">
+                      {/* All Dates Option */}
+                      <button
+                        onClick={() => {
+                          setSelectedDate('all');
+                          setDateDropdownOpen(false);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${
+                          selectedDate === 'all' ? 'bg-amber-100 text-amber-700' : 'text-[#1b1e4c]'
+                        }`}
+                      >
+                        <CalendarDays size={16} />
+                        <span className="font-medium">All Dates</span>
+                        {selectedDate === 'all' && <CheckCircle2 size={14} className="ml-auto" />}
+                      </button>
+
+                      {uniqueDates.length > 0 && <div className="border-t border-slate-100" />}
+
+                      {/* Individual Dates */}
+                      {uniqueDates.map((date) => (
+                        <button
+                          key={date}
+                          onClick={() => {
+                            setSelectedDate(date);
+                            setDateDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${
+                            selectedDate === date ? 'bg-amber-100 text-amber-700' : 'text-[#1b1e4c]'
+                          }`}
+                        >
+                          <Calendar size={16} />
+                          <span className="font-medium">{date}</span>
+                          {selectedDate === date && <CheckCircle2 size={14} className="ml-auto" />}
+                        </button>
+                      ))}
+
+                      {uniqueDates.length === 0 && (
+                        <div className="px-4 py-3 text-sm text-slate-500 text-center">
+                          No dates available
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Clear Filters Button */}
+            {(selectedAgent !== 'all' || selectedDate !== 'all') && (
+              <button
+                onClick={() => {
+                  setSelectedAgent('all');
+                  setSelectedDate('all');
+                }}
+                className="flex items-center gap-1 px-3 py-2 text-sm text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                <X size={14} />
+                Clear Filters
+              </button>
+            )}
+          </div>
+
+          {/* Quick agent chips */}
+          <div className="flex flex-wrap items-center gap-2">
+            {agents.slice(0, 3).map((agent) => (
+              <button
+                key={agent}
+                onClick={() => setSelectedAgent(selectedAgent === agent ? 'all' : agent)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  selectedAgent === agent
+                    ? 'bg-[#13BCC5] text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {agent.split(' ')[0]}
+              </button>
+            ))}
+            {uniqueDates.slice(0, 3).map((date) => (
+              <button
+                key={date}
+                onClick={() => setSelectedDate(selectedDate === date ? 'all' : date)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  selectedDate === date
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                }`}
+              >
+                {date}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -1053,8 +1194,28 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
 
                     {/* Expanded Row */}
                     {expandedRow === metric.id && (
-                      <div className="px-3 md:px-4 pb-4 bg-slate-50 border-t border-slate-100">
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 pt-4">
+                      <div className="px-3 md:px-4 pb-4 bg-gradient-to-r from-slate-50 to-white border-l-4 border-[#13BCC5] ml-4">
+                        {/* AI Summary */}
+                        <div className="pt-4 mb-4">
+                          <AISummary
+                            content={`Agent: ${metric.agent || 'N/A'}, Campaign: ${metric.campaign || 'N/A'}, Audience: ${metric.audience || 'N/A'}`}
+                            type="metric"
+                            metadata={{
+                              acceptanceRate: metric.acceptanceRate || '',
+                              replies: metric.replies || '',
+                              totalInvited: metric.totalInvited || '',
+                              totalAccepted: metric.totalAccepted || '',
+                              campaign: metric.campaign || '',
+                              agent: metric.agent || '',
+                              weekEnd: metric.weekEnd || '',
+                              defyLead: metric.defyLead || '',
+                              totalMessaged: metric.totalMessaged || '',
+                              netNewConnects: metric.netNewConnects || '',
+                            }}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
                           {allFields.map(field => {
                             const editable = canEditField(field.key);
                             return (

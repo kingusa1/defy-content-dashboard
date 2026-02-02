@@ -1017,12 +1017,49 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                 <label className="block text-xs font-medium text-slate-600 mb-1">
                   {field.label}
                 </label>
-                <input
-                  type="text"
-                  value={newMetric[field.key as keyof WeekMetric] || ''}
-                  onChange={(e) => setNewMetric(prev => ({ ...prev, [field.key]: e.target.value }))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
-                />
+                {/* Status Dropdown */}
+                {field.key === 'status' ? (
+                  <select
+                    value={newMetric.status || ''}
+                    onChange={(e) => setNewMetric(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
+                  >
+                    <option value="">Select Status</option>
+                    <option value="Active">Active</option>
+                    <option value="Not Active">Not Active</option>
+                  </select>
+                ) : field.key === 'agent' ? (
+                  /* Agent Dropdown */
+                  <select
+                    value={newMetric.agent || ''}
+                    onChange={(e) => setNewMetric(prev => ({ ...prev, agent: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
+                  >
+                    <option value="">Select Agent</option>
+                    {agents.map(agent => (
+                      <option key={agent} value={agent}>{agent}</option>
+                    ))}
+                  </select>
+                ) : field.key === 'campaign' ? (
+                  /* Campaign Dropdown */
+                  <select
+                    value={newMetric.campaign || ''}
+                    onChange={(e) => setNewMetric(prev => ({ ...prev, campaign: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
+                  >
+                    <option value="">Select Campaign</option>
+                    <option value="Invite to Connect">Invite to Connect</option>
+                    <option value="Solicitation Campaign">Solicitation Campaign</option>
+                  </select>
+                ) : (
+                  /* Regular Text Input */
+                  <input
+                    type="text"
+                    value={newMetric[field.key as keyof WeekMetric] || ''}
+                    onChange={(e) => setNewMetric(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
+                  />
+                )}
               </div>
             ))}
           </div>

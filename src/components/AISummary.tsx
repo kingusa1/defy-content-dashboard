@@ -6,6 +6,7 @@ interface AISummaryProps {
   type: 'article' | 'story' | 'metric';
   title?: string;
   metadata?: Record<string, string>;
+  status?: 'scheduled' | 'published' | 'completed' | 'pending' | 'draft';
 }
 
 // Available Pollinations AI models to try in order
@@ -21,12 +22,12 @@ const AI_MODELS = [
 const summaryCache = new Map<string, { summary: string; model: string }>();
 
 // Generate a cache key from content
-const getCacheKey = (content: string, type: string, title?: string, metadata?: Record<string, string>): string => {
+const getCacheKey = (content: string, type: string, title?: string, metadata?: Record<string, string>, status?: string): string => {
   const metaStr = metadata ? JSON.stringify(metadata) : '';
-  return `${type}:${title || ''}:${content.slice(0, 200)}:${metaStr.slice(0, 100)}`;
+  return `${type}:${status || ''}:${title || ''}:${content.slice(0, 200)}:${metaStr.slice(0, 100)}`;
 };
 
-const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata }) => {
+const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata, status }) => {
   const [summary, setSummary] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +43,7 @@ const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata })
     }
 
     // Check cache first (unless forcing refresh)
-    const cacheKey = getCacheKey(content, type, title, metadata);
+    const cacheKey = getCacheKey(content, type, title, metadata, status);
     if (!forceRefresh && summaryCache.has(cacheKey)) {
       const cached = summaryCache.get(cacheKey)!;
       setSummary(cached.summary);
@@ -60,49 +61,41 @@ const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata })
     setUsedModel(null);
     setCurrentModel(null);
 
+    // Check for missing/empty content
+    const hasContent = content && content.trim().length > 20;
+    const statusLabel = status === 'published' ? 'PUBLISHED' : status === 'completed' ? 'COMPLETED' : status === 'pending' ? 'PENDING' : status === 'draft' ? 'DRAFT' : 'SCHEDULED';
+
     const prompt = type === 'article'
-      ? `You are a social media marketing expert. Analyze this insurance/business news post and provide a CONCISE actionable summary (max 4 sentences):
+      ? hasContent
+        ? `This is a ${statusLabel} social media post. Summarize in 2-3 sentences what it's about. Focus on the actual topic, key message, and target audience.
 
-1. KEY INSIGHT: What's the main news/value?
-2. BEST TIME TO POST: Suggest optimal posting time
-3. ENGAGEMENT TIP: One specific way to boost engagement
-4. NEXT ACTION: What should the user do with this post?
+Status: ${statusLabel}
+Title: ${title || 'Untitled'}
+Content: ${content.slice(0, 500)}
 
-Title: ${title || 'N/A'}
-Content: ${content}
-
-Be direct, specific, and actionable. No fluff.`
+Summary:`
+        : `This article "${title || 'Untitled'}" is ${statusLabel} but has no post content yet. State that the content is missing and needs to be written.`
       : type === 'story'
-      ? `You are a social media marketing expert. Analyze this customer success story and provide a CONCISE actionable summary (max 4 sentences):
+      ? hasContent
+        ? `This customer success story is ${statusLabel}. Summarize in 2-3 sentences what the story is about and what results are highlighted.
 
-1. STORY STRENGTH: What makes this story compelling?
-2. EMOTIONAL HOOK: The key emotional trigger for engagement
-3. CTA EFFECTIVENESS: Is the call-to-action strong? How to improve?
-4. NEXT ACTION: Should this post now, be edited, or saved for later?
+Status: ${statusLabel}
+Content: ${content.slice(0, 500)}
 
-Content: ${content}
+Summary:`
+        : `This success story is ${statusLabel} but has no content yet. State that the captions need to be written.`
+      : `Analyze these LinkedIn outreach metrics. State the actual numbers and whether performance is good, average, or needs improvement.
 
-Be direct, specific, and actionable. No fluff.`
-      : `You are a LinkedIn outreach performance analyst. Analyze these metrics and provide a CONCISE actionable summary (max 4 sentences):
+Agent: ${metadata?.agent || 'No agent specified'}
+Campaign: ${metadata?.campaign || 'No campaign'}
+Acceptance Rate: ${metadata?.acceptanceRate || 'No data'}
+Replies: ${metadata?.replies || 'No data'}
+Total Invited: ${metadata?.totalInvited || 'No data'}
+Total Accepted: ${metadata?.totalAccepted || 'No data'}
+Week: ${metadata?.weekEnd || 'Unknown week'}
+Lead: ${metadata?.defyLead || 'No lead assigned'}
 
-METRICS:
-- Agent: ${metadata?.agent || 'N/A'}
-- Campaign: ${metadata?.campaign || 'N/A'}
-- Acceptance Rate: ${metadata?.acceptanceRate || 'N/A'}
-- Replies: ${metadata?.replies || 'N/A'}
-- Total Invited: ${metadata?.totalInvited || 'N/A'}
-- Total Accepted: ${metadata?.totalAccepted || 'N/A'}
-- Messages Sent: ${metadata?.totalMessaged || 'N/A'}
-- Net New Connects: ${metadata?.netNewConnects || 'N/A'}
-- Defy Lead: ${metadata?.defyLead || 'None'}
-
-PROVIDE:
-1. PERFORMANCE VERDICT: Good/Average/Needs Improvement + why
-2. KEY INSIGHT: Most important finding from the data
-3. BOTTLENECK: What's limiting better results?
-4. NEXT ACTION: Specific step to improve performance
-
-Be direct, data-driven, and actionable. No fluff.`;
+Analysis:`;
 
     // Try each model in sequence until one succeeds
     for (const model of AI_MODELS) {
@@ -151,7 +144,7 @@ Be direct, data-driven, and actionable. No fluff.`;
 
     // All models failed, use fallback
     console.log('All AI models failed, using fallback summary');
-    const fallback = generateFallbackSummary(content, type, metadata);
+    const fallback = generateFallbackSummary(content, type, metadata, status);
     setSummary(fallback);
     setUsedModel('fallback');
     setCurrentModel(null);
@@ -164,62 +157,59 @@ Be direct, data-driven, and actionable. No fluff.`;
   const generateFallbackSummary = (
     text: string,
     contentType: string,
-    meta?: Record<string, string>
+    meta?: Record<string, string>,
+    itemStatus?: string
   ): string => {
+    const statusLabel = itemStatus === 'published' ? '📤 PUBLISHED' : itemStatus === 'completed' ? '✅ COMPLETED' : itemStatus === 'pending' ? '⏳ PENDING' : itemStatus === 'draft' ? '📝 DRAFT' : '📅 SCHEDULED';
+    const hasContent = text && text.trim().length > 20;
+
     if (contentType === 'metric' && meta) {
       const acceptRate = parseFloat(meta.acceptanceRate?.replace('%', '') || '0');
       const replies = parseInt(meta.replies || '0');
       const invited = parseInt(meta.totalInvited || '0');
+      const hasData = acceptRate > 0 || replies > 0 || invited > 0;
+
+      if (!hasData) {
+        return `⚠️ NO DATA | Metrics for ${meta.agent || 'this agent'} have no recorded activity. Check if data was entered correctly.`;
+      }
 
       let verdict = 'NEEDS REVIEW';
       let insight = '';
-      let action = '';
 
       if (acceptRate >= 30) {
-        verdict = '✅ STRONG PERFORMANCE';
+        verdict = '✅ STRONG';
         insight = `${acceptRate}% acceptance rate is above average.`;
       } else if (acceptRate >= 15) {
-        verdict = '⚠️ AVERAGE PERFORMANCE';
+        verdict = '⚠️ AVERAGE';
         insight = `${acceptRate}% acceptance rate - room for improvement.`;
       } else if (acceptRate > 0) {
-        verdict = '🔴 NEEDS ATTENTION';
+        verdict = '🔴 LOW';
         insight = `${acceptRate}% acceptance rate is below target.`;
       }
 
-      if (replies > 0 && invited > 0) {
-        const replyRate = ((replies / invited) * 100).toFixed(1);
-        action = `Reply rate: ${replyRate}%. ${parseFloat(replyRate) < 5 ? 'Consider revising message template.' : 'Message resonating well.'}`;
-      } else {
-        action = 'Review outreach volume and message quality.';
-      }
+      const replyInfo = replies > 0 && invited > 0
+        ? `Reply rate: ${((replies / invited) * 100).toFixed(1)}%.`
+        : '';
 
-      return `${verdict} | ${insight} ${action} Next: ${meta.defyLead ? 'Follow up on lead: ' + meta.defyLead : 'Focus on generating qualified leads.'}`;
+      return `${verdict} | ${insight} ${replyInfo} ${meta.defyLead ? 'Lead: ' + meta.defyLead : 'No lead assigned.'}`;
+    }
+
+    // Handle missing content
+    if (!hasContent) {
+      if (contentType === 'article') {
+        return `${statusLabel} | ⚠️ NO CONTENT - This article needs LinkedIn and Twitter posts written.`;
+      }
+      return `${statusLabel} | ⚠️ NO CONTENT - This success story needs captions written.`;
     }
 
     const wordCount = text.split(/\s+/).length;
-    const hasHashtags = text.includes('#');
-    const hasEmojis = /[\u{1F300}-\u{1F9FF}]/u.test(text);
-    const hasCTA = /click|learn|discover|join|sign up|contact|dm|link/i.test(text);
 
     if (contentType === 'article') {
-      const issues = [];
-      if (!hasHashtags) issues.push('Add 3-5 relevant hashtags');
-      if (!hasEmojis) issues.push('Add emojis for 25% more engagement');
-      if (wordCount > 300) issues.push('Consider shortening for better readability');
-      if (!hasCTA) issues.push('Add a clear call-to-action');
-
-      const status = issues.length === 0 ? '✅ READY TO POST' : `⚠️ ${issues.length} IMPROVEMENTS NEEDED`;
-      return `${status} | ${wordCount} words. ${issues.length > 0 ? 'To-do: ' + issues.join(', ') + '.' : 'Post is optimized for engagement.'} Best time: Tue-Thu 9-11am.`;
+      return `${statusLabel} | ${wordCount} words. Post about ${text.slice(0, 100).split(' ').slice(0, 10).join(' ')}...`;
     }
 
     // Success story
-    const issues = [];
-    if (!hasHashtags) issues.push('Add hashtags (#CustomerSuccess, #InsurTech)');
-    if (!hasEmojis) issues.push('Add emojis for emotional connection');
-    if (!hasCTA) issues.push('Add CTA (Contact us, Learn more)');
-
-    const status = issues.length === 0 ? '✅ COMPELLING STORY' : `⚠️ ENHANCE BEFORE POSTING`;
-    return `${status} | ${wordCount} words. ${issues.length > 0 ? 'Improvements: ' + issues.join(', ') + '.' : 'Strong emotional appeal.'} Next: ${issues.length > 0 ? 'Make edits then schedule.' : 'Schedule for peak hours.'}`;
+    return `${statusLabel} | ${wordCount} words. Story content ready for review.`;
   };
 
   useEffect(() => {

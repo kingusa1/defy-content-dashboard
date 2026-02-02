@@ -173,6 +173,7 @@ const NewsArticlesTable: React.FC<NewsArticlesTableProps> = ({ articles }) => {
                           content={`${article.linkedinPost || ''} ${article.twitterPost || ''}`}
                           type="article"
                           title={article.title}
+                          status={article.status}
                         />
 
                         {/* Post Content */}

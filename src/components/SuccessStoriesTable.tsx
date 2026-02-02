@@ -103,6 +103,7 @@ const SuccessStoriesTable: React.FC<SuccessStoriesTableProps> = ({ stories }) =>
                   <AISummary
                     content={`${story.twitterCaption || ''} ${story.linkedinCaption || ''}`}
                     type="story"
+                    status={story.status}
                   />
 
                   {/* Post Content */}

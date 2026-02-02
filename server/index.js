@@ -585,18 +585,45 @@ app.post('/api/metrics/add', async (req, res) => {
     // Build row array from data
     const newRow = METRICS_COLUMNS.map(col => data[col] || '');
 
-    // Append the new row
-    await sheets.spreadsheets.values.append({
+    // Find the first empty row by reading all data
+    const existingData = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `'${SHEETS.METRICS}'!A:U`,
+    });
+
+    const rows = existingData.data.values || [];
+
+    // Find first empty row (skip header row at index 0)
+    // A row is empty if it doesn't exist OR all cells are empty/whitespace
+    let emptyRowIndex = -1;
+
+    // Start checking from row 2 (index 1, after header)
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      // Check if row is empty (no data or all cells empty/whitespace)
+      const isEmpty = !row || row.length === 0 || row.every(cell => !cell || cell.toString().trim() === '');
+      if (isEmpty) {
+        emptyRowIndex = i + 1; // Convert to 1-indexed row number for Sheets API
+        break;
+      }
+    }
+
+    // If no empty row found within existing data, use the next row after all data
+    if (emptyRowIndex === -1) {
+      emptyRowIndex = rows.length + 1; // Next row after existing data
+    }
+
+    // Write to the specific empty row using update() instead of append()
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEETS.METRICS}'!A${emptyRowIndex}:U${emptyRowIndex}`,
       valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
       requestBody: {
         values: [newRow]
       }
     });
 
-    res.json({ success: true, message: 'Row added successfully' });
+    res.json({ success: true, message: `Row added successfully at row ${emptyRowIndex}` });
   } catch (error) {
     console.error('Error adding metrics:', error);
     res.status(500).json({ error: error.message });

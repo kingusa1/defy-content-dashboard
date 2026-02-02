@@ -67,35 +67,41 @@ const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata, s
 
     const prompt = type === 'article'
       ? hasContent
-        ? `This is a ${statusLabel} social media post. Summarize in 2-3 sentences what it's about. Focus on the actual topic, key message, and target audience.
+        ? `[${statusLabel}] Analyze this social media post:
 
-Status: ${statusLabel}
 Title: ${title || 'Untitled'}
 Content: ${content.slice(0, 500)}
 
-Summary:`
-        : `This article "${title || 'Untitled'}" is ${statusLabel} but has no post content yet. State that the content is missing and needs to be written.`
+Respond in this exact format (keep it concise):
+SUMMARY: [1 sentence - what is this post about?]
+VERDICT: [Strong/Average/Weak] - [brief reason why]
+TIP: [1 specific improvement suggestion]`
+        : `[${statusLabel}] This article "${title || 'Untitled'}" has NO CONTENT. The LinkedIn and Twitter posts need to be written before publishing.`
       : type === 'story'
       ? hasContent
-        ? `This customer success story is ${statusLabel}. Summarize in 2-3 sentences what the story is about and what results are highlighted.
+        ? `[${statusLabel}] Analyze this customer success story:
 
-Status: ${statusLabel}
 Content: ${content.slice(0, 500)}
 
-Summary:`
-        : `This success story is ${statusLabel} but has no content yet. State that the captions need to be written.`
-      : `Analyze these LinkedIn outreach metrics. State the actual numbers and whether performance is good, average, or needs improvement.
+Respond in this exact format (keep it concise):
+SUMMARY: [1 sentence - what is the story about and what result?]
+VERDICT: [Strong/Average/Weak] - [is it compelling? why?]
+TIP: [1 specific suggestion to make it more engaging]`
+        : `[${statusLabel}] This success story has NO CONTENT. The Twitter and LinkedIn captions need to be written.`
+      : `Analyze these LinkedIn outreach metrics:
 
-Agent: ${metadata?.agent || 'No agent specified'}
-Campaign: ${metadata?.campaign || 'No campaign'}
-Acceptance Rate: ${metadata?.acceptanceRate || 'No data'}
-Replies: ${metadata?.replies || 'No data'}
-Total Invited: ${metadata?.totalInvited || 'No data'}
-Total Accepted: ${metadata?.totalAccepted || 'No data'}
-Week: ${metadata?.weekEnd || 'Unknown week'}
-Lead: ${metadata?.defyLead || 'No lead assigned'}
+Agent: ${metadata?.agent || 'Unknown'}
+Acceptance Rate: ${metadata?.acceptanceRate || 'N/A'}
+Replies: ${metadata?.replies || '0'}
+Total Invited: ${metadata?.totalInvited || '0'}
+Total Accepted: ${metadata?.totalAccepted || '0'}
+Week: ${metadata?.weekEnd || 'Unknown'}
+Lead: ${metadata?.defyLead || 'None'}
 
-Analysis:`;
+Respond in this exact format (keep it concise):
+SUMMARY: [1 sentence with the key numbers]
+VERDICT: [Strong/Average/Weak] performance - [why?]
+TIP: [1 specific action to improve]`;
 
     // Try each model in sequence until one succeeds
     for (const model of AI_MODELS) {
@@ -167,49 +173,67 @@ Analysis:`;
       const acceptRate = parseFloat(meta.acceptanceRate?.replace('%', '') || '0');
       const replies = parseInt(meta.replies || '0');
       const invited = parseInt(meta.totalInvited || '0');
+      const accepted = parseInt(meta.totalAccepted || '0');
       const hasData = acceptRate > 0 || replies > 0 || invited > 0;
 
       if (!hasData) {
-        return `⚠️ NO DATA | Metrics for ${meta.agent || 'this agent'} have no recorded activity. Check if data was entered correctly.`;
+        return `⚠️ NO DATA\nSUMMARY: No metrics recorded for ${meta.agent || 'this agent'}.\nVERDICT: Cannot evaluate - missing data.\nTIP: Check if data was entered correctly in the sheet.`;
       }
 
-      let verdict = 'NEEDS REVIEW';
-      let insight = '';
+      let verdict = '';
+      let tip = '';
 
       if (acceptRate >= 30) {
-        verdict = '✅ STRONG';
-        insight = `${acceptRate}% acceptance rate is above average.`;
+        verdict = '✅ Strong performance';
+        tip = 'Keep this approach and scale up volume.';
       } else if (acceptRate >= 15) {
-        verdict = '⚠️ AVERAGE';
-        insight = `${acceptRate}% acceptance rate - room for improvement.`;
-      } else if (acceptRate > 0) {
-        verdict = '🔴 LOW';
-        insight = `${acceptRate}% acceptance rate is below target.`;
+        verdict = '⚠️ Average performance';
+        tip = 'Test different connection request messages.';
+      } else {
+        verdict = '🔴 Weak performance';
+        tip = 'Review targeting criteria and message quality.';
       }
 
-      const replyInfo = replies > 0 && invited > 0
-        ? `Reply rate: ${((replies / invited) * 100).toFixed(1)}%.`
-        : '';
+      const replyRate = invited > 0 ? ((replies / invited) * 100).toFixed(1) : '0';
 
-      return `${verdict} | ${insight} ${replyInfo} ${meta.defyLead ? 'Lead: ' + meta.defyLead : 'No lead assigned.'}`;
+      return `SUMMARY: ${invited} invited, ${accepted} accepted (${acceptRate}%), ${replies} replies (${replyRate}% reply rate).\nVERDICT: ${verdict}\nTIP: ${tip}`;
     }
 
     // Handle missing content
     if (!hasContent) {
       if (contentType === 'article') {
-        return `${statusLabel} | ⚠️ NO CONTENT - This article needs LinkedIn and Twitter posts written.`;
+        return `[${statusLabel}] ⚠️ NO CONTENT\nSUMMARY: This article has no social media posts written yet.\nVERDICT: Cannot evaluate - content missing.\nTIP: Write LinkedIn and Twitter posts before scheduling.`;
       }
-      return `${statusLabel} | ⚠️ NO CONTENT - This success story needs captions written.`;
+      return `[${statusLabel}] ⚠️ NO CONTENT\nSUMMARY: This success story has no captions.\nVERDICT: Cannot evaluate - content missing.\nTIP: Write Twitter and LinkedIn captions.`;
     }
 
     const wordCount = text.split(/\s+/).length;
+    const hasHashtags = text.includes('#');
+    const hasEmojis = /[\u{1F300}-\u{1F9FF}]/u.test(text);
+    const preview = text.slice(0, 80).split(' ').slice(0, 12).join(' ');
+
+    let verdict = '⚠️ Average';
+    let tip = '';
+
+    if (hasHashtags && hasEmojis && wordCount > 50) {
+      verdict = '✅ Strong';
+      tip = 'Ready to post. Consider A/B testing different hooks.';
+    } else if (!hasHashtags) {
+      tip = 'Add 3-5 relevant hashtags for better reach.';
+    } else if (!hasEmojis) {
+      tip = 'Add emojis to increase engagement by 25%.';
+    } else if (wordCount < 50) {
+      tip = 'Content is short. Add more detail or context.';
+    } else {
+      tip = 'Review call-to-action clarity.';
+    }
 
     if (contentType === 'article') {
-      return `${statusLabel} | ${wordCount} words. Post about ${text.slice(0, 100).split(' ').slice(0, 10).join(' ')}...`;
+      return `[${statusLabel}]\nSUMMARY: ${wordCount} words about "${preview}..."\nVERDICT: ${verdict}\nTIP: ${tip}`;
     }
 
     // Success story
-    return `${statusLabel} | ${wordCount} words. Story content ready for review.`;
+    return `[${statusLabel}]\nSUMMARY: ${wordCount} words - customer success story.\nVERDICT: ${verdict}\nTIP: ${tip}`;
   };
 
   useEffect(() => {

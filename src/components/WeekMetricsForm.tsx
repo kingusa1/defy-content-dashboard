@@ -193,6 +193,8 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
     replyPercent: string;
     weekEnd: string;
     dateRange: string;
+    missingColumns: string[];
+    foundColumns: string[];
   } | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -373,13 +375,27 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
     // Parse headers using proper CSV parsing
     const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/"/g, '').trim());
 
-    // Find column indices
+    // Find column indices and track which columns are found/missing
+    const expectedColumns = ['invited', 'accepted', 'messaged', 'replied', 'start_date', 'end_date'];
+    const foundColumns: string[] = [];
+    const missingColumns: string[] = [];
+
     const invitedIdx = headers.findIndex(h => h === 'invited');
     const acceptedIdx = headers.findIndex(h => h === 'accepted');
     const messagedIdx = headers.findIndex(h => h === 'messaged');
     const repliedIdx = headers.findIndex(h => h === 'replied');
     const startDateIdx = headers.findIndex(h => h === 'start_date');
     const endDateIdx = headers.findIndex(h => h === 'end_date');
+
+    // Track found and missing columns
+    expectedColumns.forEach(col => {
+      const idx = headers.findIndex(h => h === col);
+      if (idx >= 0) {
+        foundColumns.push(col);
+      } else {
+        missingColumns.push(col);
+      }
+    });
 
     // Sum up all daily values
     let totalInvited = 0;
@@ -463,6 +479,8 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
       replyPercent,
       weekEnd,
       dateRange: `${firstDate} - ${lastDate}`,
+      foundColumns,
+      missingColumns,
     };
   };
 
@@ -1471,9 +1489,44 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                       </div>
                       <div className="flex items-center justify-between text-sm mt-1">
                         <span className="text-slate-500">Week End:</span>
-                        <span className="font-medium text-[#1b1e4c]">{csvData.weekEnd}</span>
+                        <span className="font-medium text-[#1b1e4c]">{csvData.weekEnd || 'Not found'}</span>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Missing Columns Warning */}
+                  {csvData.missingColumns && csvData.missingColumns.length > 0 && (
+                    <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
+                      <div className="flex items-center gap-2 text-amber-700 text-sm">
+                        <AlertCircle size={16} />
+                        <span className="font-medium">Some columns not found in CSV:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {csvData.missingColumns.map(col => (
+                          <span key={col} className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                            {col}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-xs text-amber-600 mt-2">
+                        You can fill in missing values manually in the next step.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Agent Selection */}
+                  <div>
+                    <h6 className="font-medium text-[#1b1e4c] mb-2">Which agent is this for?</h6>
+                    <select
+                      value={newMetric.agent || ''}
+                      onChange={(e) => setNewMetric(prev => ({ ...prev, agent: e.target.value }))}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                    >
+                      <option value="">Select Agent...</option>
+                      {agents.map(agent => (
+                        <option key={agent} value={agent}>{agent}</option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Campaign Type Selection */}
@@ -1482,12 +1535,16 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     <div className="grid gap-3">
                       <button
                         onClick={() => {
+                          if (!newMetric.agent) {
+                            setError('Please select an agent first');
+                            return;
+                          }
                           setNewMetric(prev => ({ ...prev, campaign: 'Invite to Connect' }));
                           setUploadStep(3);
                         }}
                         className={`w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition-all hover:border-purple-500 hover:bg-purple-50 ${
                           newMetric.campaign === 'Invite to Connect' ? 'border-purple-500 bg-purple-50' : 'border-slate-200'
-                        }`}
+                        } ${!newMetric.agent ? 'opacity-50' : ''}`}
                       >
                         <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
                           <UserPlus className="w-6 h-6 text-blue-600" />
@@ -1500,12 +1557,16 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                       </button>
                       <button
                         onClick={() => {
+                          if (!newMetric.agent) {
+                            setError('Please select an agent first');
+                            return;
+                          }
                           setNewMetric(prev => ({ ...prev, campaign: 'Solicitation Campaign' }));
                           setUploadStep(3);
                         }}
                         className={`w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition-all hover:border-purple-500 hover:bg-purple-50 ${
                           newMetric.campaign === 'Solicitation Campaign' ? 'border-purple-500 bg-purple-50' : 'border-slate-200'
-                        }`}
+                        } ${!newMetric.agent ? 'opacity-50' : ''}`}
                       >
                         <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
                           <Target className="w-6 h-6 text-amber-600" />
@@ -1517,6 +1578,12 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                         <ArrowRight size={20} className="text-slate-400" />
                       </button>
                     </div>
+                    {!newMetric.agent && (
+                      <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                        <AlertCircle size={12} />
+                        Select an agent above to continue
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1550,29 +1617,91 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     </p>
                   </div>
 
-                  {/* Campaign Badge */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-600">Campaign:</span>
+                  {/* Agent & Campaign Badges */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-slate-600">Agent:</span>
+                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                      {newMetric.agent}
+                    </span>
+                    <span className="text-sm text-slate-600 ml-2">Campaign:</span>
                     <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
                       {newMetric.campaign}
                     </span>
                   </div>
 
+                  {/* Missing CSV Data - Manual Entry */}
+                  {csvData.missingColumns && csvData.missingColumns.length > 0 && (
+                    <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                      <div className="flex items-center gap-2 text-amber-700 text-sm mb-3">
+                        <AlertCircle size={16} />
+                        <span className="font-medium">Fill in missing data manually:</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {csvData.missingColumns.includes('invited') && (
+                          <div>
+                            <label className="block text-xs font-medium text-amber-700 mb-1">Total Invited *</label>
+                            <input
+                              type="number"
+                              value={newMetric.totalInvited || ''}
+                              onChange={(e) => setNewMetric(prev => ({ ...prev, totalInvited: e.target.value }))}
+                              placeholder="Enter total invited..."
+                              className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            />
+                          </div>
+                        )}
+                        {csvData.missingColumns.includes('accepted') && (
+                          <div>
+                            <label className="block text-xs font-medium text-amber-700 mb-1">Total Accepted *</label>
+                            <input
+                              type="number"
+                              value={newMetric.totalAccepted || ''}
+                              onChange={(e) => setNewMetric(prev => ({ ...prev, totalAccepted: e.target.value }))}
+                              placeholder="Enter total accepted..."
+                              className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            />
+                          </div>
+                        )}
+                        {csvData.missingColumns.includes('messaged') && (
+                          <div>
+                            <label className="block text-xs font-medium text-amber-700 mb-1">Total Messaged</label>
+                            <input
+                              type="number"
+                              value={newMetric.totalMessaged || ''}
+                              onChange={(e) => setNewMetric(prev => ({ ...prev, totalMessaged: e.target.value }))}
+                              placeholder="Enter total messaged..."
+                              className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            />
+                          </div>
+                        )}
+                        {csvData.missingColumns.includes('replied') && (
+                          <div>
+                            <label className="block text-xs font-medium text-amber-700 mb-1">Total Replies</label>
+                            <input
+                              type="number"
+                              value={newMetric.replies || ''}
+                              onChange={(e) => setNewMetric(prev => ({ ...prev, replies: e.target.value }))}
+                              placeholder="Enter total replies..."
+                              className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            />
+                          </div>
+                        )}
+                        {(csvData.missingColumns.includes('start_date') || csvData.missingColumns.includes('end_date') || !csvData.weekEnd) && (
+                          <div className="col-span-2">
+                            <label className="block text-xs font-medium text-amber-700 mb-1">Week End Date *</label>
+                            <input
+                              type="date"
+                              value={newMetric.weekEnd || ''}
+                              onChange={(e) => setNewMetric(prev => ({ ...prev, weekEnd: e.target.value }))}
+                              className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Remaining Fields */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Agent *</label>
-                      <select
-                        value={newMetric.agent || ''}
-                        onChange={(e) => setNewMetric(prev => ({ ...prev, agent: e.target.value }))}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
-                      >
-                        <option value="">Select Agent</option>
-                        {agents.map(agent => (
-                          <option key={agent} value={agent}>{agent}</option>
-                        ))}
-                      </select>
-                    </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                       <select

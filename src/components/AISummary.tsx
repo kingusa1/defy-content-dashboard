@@ -8,11 +8,21 @@ interface AISummaryProps {
   metadata?: Record<string, string>;
 }
 
+// Available Pollinations AI models to try in order
+const AI_MODELS = [
+  'openai',
+  'mistral',
+  'llama',
+  'qwen',
+  'deepseek',
+];
+
 const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata }) => {
   const [summary, setSummary] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [usedModel, setUsedModel] = useState<string | null>(null);
 
   const generateSummary = async () => {
     if (!content || content.trim().length < 10) {
@@ -22,37 +32,53 @@ const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata })
 
     setLoading(true);
     setError(null);
+    setUsedModel(null);
 
-    try {
-      // Generate AI summary using Pollinations API
-      const prompt = type === 'article'
-        ? `Analyze this social media post about insurance/business news and provide a brief 2-3 sentence summary highlighting the key points, target audience appeal, and potential engagement value:\n\nTitle: ${title || 'N/A'}\nContent: ${content}`
-        : type === 'story'
-        ? `Analyze this customer success story social media post and provide a brief 2-3 sentence summary highlighting the customer benefit, emotional appeal, and call-to-action effectiveness:\n\nContent: ${content}`
-        : `Analyze this weekly metrics data and provide a brief 2-3 sentence summary highlighting performance insights, trends, and recommendations:\n\nData: ${JSON.stringify(metadata || {})}`;
+    const prompt = type === 'article'
+      ? `Analyze this social media post about insurance/business news and provide a brief 2-3 sentence summary highlighting the key points, target audience appeal, and potential engagement value:\n\nTitle: ${title || 'N/A'}\nContent: ${content}`
+      : type === 'story'
+      ? `Analyze this customer success story social media post and provide a brief 2-3 sentence summary highlighting the customer benefit, emotional appeal, and call-to-action effectiveness:\n\nContent: ${content}`
+      : `Analyze this weekly metrics data and provide a brief 2-3 sentence summary highlighting performance insights, trends, and recommendations:\n\nData: ${JSON.stringify(metadata || {})}`;
 
-      const response = await fetch(
-        `https://text.pollinations.ai/${encodeURIComponent(prompt)}`,
-        {
-          method: 'GET',
-          headers: { 'Accept': 'text/plain' }
+    // Try each model in sequence until one succeeds
+    for (const model of AI_MODELS) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout per model
+
+        const response = await fetch(
+          `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${model}`,
+          {
+            method: 'GET',
+            headers: { 'Accept': 'text/plain' },
+            signal: controller.signal
+          }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const text = await response.text();
+          if (text && text.trim().length > 10) {
+            setSummary(text.trim());
+            setUsedModel(model);
+            setLoading(false);
+            return; // Success! Exit the loop
+          }
         }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to generate summary');
+      } catch (err) {
+        console.log(`Model ${model} failed, trying next...`, err);
+        // Continue to next model
       }
-
-      const text = await response.text();
-      setSummary(text.trim());
-    } catch (err) {
-      console.error('AI Summary error:', err);
-      setError('Unable to generate AI summary. Please try again.');
-      // Fallback to basic summary
-      setSummary(generateFallbackSummary(content, type, metadata));
-    } finally {
-      setLoading(false);
     }
+
+    // All models failed, use fallback
+    console.log('All AI models failed, using fallback summary');
+    const fallback = generateFallbackSummary(content, type, metadata);
+    setSummary(fallback);
+    setUsedModel('fallback');
+    setError(null);
+    setLoading(false);
   };
 
   const generateFallbackSummary = (
@@ -141,7 +167,20 @@ const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata })
       ) : error ? (
         <div className="text-sm text-red-600">{error}</div>
       ) : (
-        <p className="text-sm text-purple-800 leading-relaxed">{summary}</p>
+        <div>
+          <p className="text-sm text-purple-800 leading-relaxed">{summary}</p>
+          {usedModel && (
+            <div className="mt-2 flex items-center gap-1">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                usedModel === 'fallback'
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-purple-100 text-purple-600'
+              }`}>
+                {usedModel === 'fallback' ? 'Quick Analysis' : `AI: ${usedModel}`}
+              </span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

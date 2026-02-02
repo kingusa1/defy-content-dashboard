@@ -18,7 +18,11 @@ import {
   Eye,
   UserCircle,
   X,
-  PlusCircle
+  PlusCircle,
+  UserPlus,
+  ArrowRight,
+  ArrowLeft,
+  Check
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import WeekMetricsAnalytics from './WeekMetricsAnalytics';
@@ -85,7 +89,23 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
   const [newAgentName, setNewAgentName] = useState('');
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
 
+  // Add Lead Modal state
+  const [showAddLeadModal, setShowAddLeadModal] = useState(false);
+  const [addLeadStep, setAddLeadStep] = useState<1 | 2 | 3>(1);
+  const [addLeadAgent, setAddLeadAgent] = useState<string>('');
+  const [addLeadSelectedRow, setAddLeadSelectedRow] = useState<WeekMetric | null>(null);
+  const [addLeadValue, setAddLeadValue] = useState('');
+  const [addLeadSaving, setAddLeadSaving] = useState(false);
+
   const isAdmin = user?.role === 'admin';
+
+  // Get rows for selected agent in Add Lead modal
+  const agentRows = useMemo(() => {
+    if (!addLeadAgent) return [];
+    return metrics.filter(m =>
+      m.agent?.toLowerCase().includes(addLeadAgent.toLowerCase())
+    );
+  }, [metrics, addLeadAgent]);
 
   // Filter metrics based on selected agent
   const filteredMetrics = useMemo(() => {
@@ -117,6 +137,50 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
     setAgents(prev => prev.filter(a => a !== agentToRemove));
     if (selectedAgent === agentToRemove) {
       setSelectedAgent('all');
+    }
+  };
+
+  // Reset Add Lead Modal
+  const resetAddLeadModal = () => {
+    setShowAddLeadModal(false);
+    setAddLeadStep(1);
+    setAddLeadAgent('');
+    setAddLeadSelectedRow(null);
+    setAddLeadValue('');
+  };
+
+  // Handle Add Lead submission
+  const handleAddLeadSubmit = async () => {
+    if (!addLeadSelectedRow || !addLeadValue.trim()) return;
+
+    try {
+      setAddLeadSaving(true);
+      setError(null);
+
+      await axios.post(`${API_URL}/metrics/update`, {
+        rowIndex: addLeadSelectedRow.rowIndex,
+        changes: { defyLead: addLeadValue.trim() },
+        userRole: user?.role,
+      });
+
+      // Update local state
+      setMetrics(prev => prev.map(m =>
+        m.id === addLeadSelectedRow.id ? { ...m, defyLead: addLeadValue.trim() } : m
+      ));
+
+      setSuccess(`Lead "${addLeadValue}" added successfully for ${addLeadAgent}!`);
+      setTimeout(() => setSuccess(null), 3000);
+      resetAddLeadModal();
+      onRefresh();
+    } catch (err: unknown) {
+      console.error('Error adding lead:', err);
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.error || 'Failed to add lead');
+      } else {
+        setError('Failed to add lead');
+      }
+    } finally {
+      setAddLeadSaving(false);
     }
   };
 
@@ -318,6 +382,13 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
               <RefreshCw size={14} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
+            <button
+              onClick={() => setShowAddLeadModal(true)}
+              className="flex items-center gap-1 md:gap-2 px-3 md:px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors text-sm"
+            >
+              <UserPlus size={14} />
+              <span className="hidden sm:inline">Add Lead</span>
+            </button>
             {isAdmin && (
               <button
                 onClick={() => setShowAddForm(!showAddForm)}
@@ -508,6 +579,244 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                   Add Agent
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Lead Modal */}
+      {showAddLeadModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                    <UserPlus className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-lg">Add Lead</h4>
+                    <p className="text-white/80 text-sm">Step {addLeadStep} of 3</p>
+                  </div>
+                </div>
+                <button
+                  onClick={resetAddLeadModal}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              {/* Progress Bar */}
+              <div className="flex gap-2 mt-4">
+                {[1, 2, 3].map((step) => (
+                  <div
+                    key={step}
+                    className={`flex-1 h-1.5 rounded-full transition-all ${
+                      step <= addLeadStep ? 'bg-white' : 'bg-white/30'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {/* Step 1: Select Agent */}
+              {addLeadStep === 1 && (
+                <div className="space-y-4">
+                  <div>
+                    <h5 className="font-bold text-[#1b1e4c] mb-1">Select Agent</h5>
+                    <p className="text-sm text-slate-500">Choose the agent for this lead</p>
+                  </div>
+                  <div className="grid gap-3 max-h-64 overflow-y-auto">
+                    {agents.map((agent) => (
+                      <button
+                        key={agent}
+                        onClick={() => {
+                          setAddLeadAgent(agent);
+                          setAddLeadStep(2);
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition-all hover:border-emerald-500 hover:bg-emerald-50 ${
+                          addLeadAgent === agent ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'
+                        }`}
+                      >
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#1b1e4c] to-[#2a2e5c] flex items-center justify-center text-white font-bold text-lg">
+                          {agent.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-[#1b1e4c]">{agent}</p>
+                          <p className="text-xs text-slate-500">
+                            {metrics.filter(m => m.agent?.toLowerCase().includes(agent.toLowerCase())).length} records
+                          </p>
+                        </div>
+                        <ArrowRight size={20} className="text-slate-400" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Select Date/Row */}
+              {addLeadStep === 2 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h5 className="font-bold text-[#1b1e4c] mb-1">Select Date</h5>
+                      <p className="text-sm text-slate-500">
+                        Choose a date for <span className="font-medium text-emerald-600">{addLeadAgent}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setAddLeadStep(1);
+                        setAddLeadAgent('');
+                      }}
+                      className="flex items-center gap-1 text-sm text-slate-600 hover:text-[#1b1e4c]"
+                    >
+                      <ArrowLeft size={16} />
+                      Back
+                    </button>
+                  </div>
+
+                  {agentRows.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                      <p className="text-slate-500">No records found for {addLeadAgent}</p>
+                      <button
+                        onClick={() => setAddLeadStep(1)}
+                        className="mt-4 text-emerald-600 hover:underline text-sm"
+                      >
+                        Select a different agent
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2 max-h-64 overflow-y-auto">
+                      {agentRows.map((row) => (
+                        <button
+                          key={row.id}
+                          onClick={() => {
+                            setAddLeadSelectedRow(row);
+                            setAddLeadStep(3);
+                          }}
+                          className={`w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition-all hover:border-emerald-500 hover:bg-emerald-50 ${
+                            addLeadSelectedRow?.id === row.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
+                            <Calendar size={20} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-[#1b1e4c]">
+                              {row.weekEnd || `Row ${row.rowIndex}`}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {row.campaign && `Campaign: ${row.campaign}`}
+                              {row.defyLead && (
+                                <span className="ml-2 text-emerald-600">
+                                  Current Lead: {row.defyLead}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          {row.defyLead ? (
+                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs rounded-lg font-medium">
+                              Has Lead
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-lg font-medium">
+                              No Lead
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 3: Enter Lead Name */}
+              {addLeadStep === 3 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h5 className="font-bold text-[#1b1e4c] mb-1">Enter Lead</h5>
+                      <p className="text-sm text-slate-500">Add lead for the selected date</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setAddLeadStep(2);
+                        setAddLeadSelectedRow(null);
+                      }}
+                      className="flex items-center gap-1 text-sm text-slate-600 hover:text-[#1b1e4c]"
+                    >
+                      <ArrowLeft size={16} />
+                      Back
+                    </button>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Agent:</span>
+                      <span className="font-medium text-[#1b1e4c]">{addLeadAgent}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Date (W. End):</span>
+                      <span className="font-medium text-[#1b1e4c]">
+                        {addLeadSelectedRow?.weekEnd || `Row ${addLeadSelectedRow?.rowIndex}`}
+                      </span>
+                    </div>
+                    {addLeadSelectedRow?.campaign && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-500">Campaign:</span>
+                        <span className="font-medium text-[#1b1e4c]">{addLeadSelectedRow.campaign}</span>
+                      </div>
+                    )}
+                    {addLeadSelectedRow?.defyLead && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-500">Current Lead:</span>
+                        <span className="font-medium text-amber-600">{addLeadSelectedRow.defyLead}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lead Input */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Lead Name
+                    </label>
+                    <input
+                      type="text"
+                      value={addLeadValue}
+                      onChange={(e) => setAddLeadValue(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addLeadValue.trim() && handleAddLeadSubmit()}
+                      placeholder="Enter lead name..."
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    onClick={handleAddLeadSubmit}
+                    disabled={!addLeadValue.trim() || addLeadSaving}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {addLeadSaving ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check size={18} />
+                        Add Lead to Google Sheet
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

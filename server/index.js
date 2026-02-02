@@ -352,6 +352,86 @@ function determineStatus(publishDate) {
   }
 }
 
+// AI Chat endpoint - connects to chickytutor model
+app.post('/api/ai/chat', async (req, res) => {
+  try {
+    const { messages, temperature = 0.7, max_tokens = 2000 } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'Messages array is required' });
+    }
+
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+    if (!OPENAI_API_KEY) {
+      // Fallback to Pollinations if no OpenAI key
+      const pollinationsResponse = await fetch('https://text.pollinations.ai/openai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'openai',
+          messages: messages,
+          temperature: temperature,
+          max_tokens: max_tokens,
+        }),
+      });
+
+      if (pollinationsResponse.ok) {
+        const data = await pollinationsResponse.json();
+        return res.status(200).json(data);
+      }
+      return res.status(500).json({ error: 'AI service unavailable' });
+    }
+
+    // Call OpenAI API with chickytutor model
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'chickytutor',
+        messages: messages,
+        temperature: temperature,
+        max_tokens: max_tokens,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      // Fallback to gpt-4o-mini if chickytutor fails
+      if (errorData.error?.code === 'model_not_found') {
+        const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: messages,
+            temperature: temperature,
+            max_tokens: max_tokens,
+          }),
+        });
+
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json();
+          return res.status(200).json(data);
+        }
+      }
+      return res.status(response.status).json({ error: errorData.error?.message || 'AI request failed' });
+    }
+
+    const data = await response.json();
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error('AI Chat error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Authentication endpoint
 app.post('/api/auth/login', async (req, res) => {
   try {

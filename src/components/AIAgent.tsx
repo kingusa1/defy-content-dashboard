@@ -25,7 +25,8 @@ interface AIAgentProps {
   data: ContentData;
 }
 
-const POLLINATIONS_API = 'https://text.pollinations.ai/openai';
+// AI API endpoint - uses backend proxy to connect to chickytutor model
+const AI_API_URL = import.meta.env.DEV ? 'http://localhost:3001/api/ai/chat' : '/api/ai/chat';
 
 // System prompt for the AI
 const getSystemPrompt = (data: ContentData) => `You are an advanced AI business analyst and decision-making assistant for Defy Insurance, a cutting-edge insurance company. You have access to real-time content management data and must provide strategic insights, predictions, and recommendations.
@@ -109,21 +110,20 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
     setShowQuickActions(false);
 
     try {
-      // Build messages array for OpenAI-compatible API
+      // Build messages array for OpenAI API
       const apiMessages = [
         { role: 'system', content: getSystemPrompt(data) },
         ...messages.map(m => ({ role: m.role, content: m.content })),
         { role: 'user', content: messageText }
       ];
 
-      // Call Pollinations OpenAI-compatible API
-      const response = await fetch(POLLINATIONS_API, {
+      // Call backend AI endpoint (connects to chickytutor model)
+      const response = await fetch(AI_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'openai',
           messages: apiMessages,
           temperature: 0.7,
           max_tokens: 2000,
@@ -194,7 +194,7 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
             <h3 className="text-white font-bold flex items-center gap-2">
               Defy AI Assistant
               <span className="px-2 py-0.5 bg-[#13BCC5]/20 text-[#13BCC5] text-xs rounded-full font-medium">
-                Powered by GPT-4
+                Powered by ChickyTutor
               </span>
             </h3>
             <p className="text-white/60 text-sm">Strategic insights & decision support</p>

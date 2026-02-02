@@ -19,6 +19,7 @@ import {
     Shield
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useSearch } from '../context/SearchContext';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -28,6 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [profileDropdown, setProfileDropdown] = useState(false);
     const { user, logout } = useAuth();
+    const { searchQuery, setSearchQuery } = useSearch();
 
     // Get user initials
     const getInitials = (name: string) => {
@@ -135,9 +137,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                             <input
                                 type="text"
-                                placeholder="Search content..."
+                                placeholder="Search articles, stories..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5] transition-all"
                             />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X size={16} />
+                                </button>
+                            )}
                         </div>
                     </div>
 

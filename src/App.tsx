@@ -4,6 +4,7 @@ import ContentDashboard from './components/ContentDashboard';
 import LoginPage from './components/LoginPage';
 import { useContentData } from './hooks/useContentData';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SearchProvider } from './context/SearchContext';
 import { AlertTriangle, Loader2, Info } from 'lucide-react';
 
 const DashboardContent: React.FC = () => {
@@ -97,7 +98,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <SearchProvider>
+        <AppContent />
+      </SearchProvider>
     </AuthProvider>
   );
 };

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { RefreshCw, FileText, Calendar, Users, Clock, Download, BarChart3, Bot, Sparkles } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { RefreshCw, FileText, Calendar, Users, Clock, Download, BarChart3, Bot, Sparkles, TrendingUp, Search } from 'lucide-react';
 import type { ContentData } from '../types/content';
 import StatsOverview from './StatsOverview';
 import NewsArticlesTable from './NewsArticlesTable';
@@ -7,7 +7,9 @@ import SuccessStoriesTable from './SuccessStoriesTable';
 import ScheduleGrid from './ScheduleGrid';
 import ContentAnalytics from './ContentAnalytics';
 import AIAgent from './AIAgent';
+import WeekMetricsForm from './WeekMetricsForm';
 import { exportAllToExcel, exportArticlesToExcel, exportStoriesToExcel } from '../utils/exportUtils';
+import { useSearch } from '../context/SearchContext';
 
 interface ContentDashboardProps {
   data: ContentData;
@@ -15,11 +17,12 @@ interface ContentDashboardProps {
   loading: boolean;
 }
 
-type TabType = 'overview' | 'articles' | 'stories' | 'schedule' | 'analytics' | 'ai';
+type TabType = 'overview' | 'articles' | 'stories' | 'schedule' | 'analytics' | 'metrics' | 'ai';
 
 const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, loading }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [exporting, setExporting] = useState(false);
+  const { searchQuery } = useSearch();
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: <Calendar size={18} /> },
@@ -27,8 +30,30 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
     { id: 'stories' as TabType, label: 'Success Stories', icon: <Users size={18} /> },
     { id: 'schedule' as TabType, label: 'Schedule', icon: <Clock size={18} /> },
     { id: 'analytics' as TabType, label: 'Analytics', icon: <BarChart3 size={18} /> },
+    { id: 'metrics' as TabType, label: 'Week Metrics', icon: <TrendingUp size={18} /> },
     { id: 'ai' as TabType, label: 'AI Assistant', icon: <Bot size={18} />, highlight: true },
   ];
+
+  // Filter data based on search query
+  const filteredArticles = useMemo(() => {
+    if (!searchQuery.trim()) return data.articles;
+    const query = searchQuery.toLowerCase();
+    return data.articles.filter(article =>
+      article.title.toLowerCase().includes(query) ||
+      article.linkedinPost?.toLowerCase().includes(query) ||
+      article.twitterPost?.toLowerCase().includes(query)
+    );
+  }, [data.articles, searchQuery]);
+
+  const filteredStories = useMemo(() => {
+    if (!searchQuery.trim()) return data.successStories;
+    const query = searchQuery.toLowerCase();
+    return data.successStories.filter(story =>
+      story.twitterCaption?.toLowerCase().includes(query) ||
+      story.linkedinCaption?.toLowerCase().includes(query) ||
+      story.date?.toLowerCase().includes(query)
+    );
+  }, [data.successStories, searchQuery]);
 
   const handleExportAll = async () => {
     setExporting(true);
@@ -208,11 +233,31 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
       )}
 
       {activeTab === 'articles' && (
-        <NewsArticlesTable articles={data.articles} />
+        <>
+          {searchQuery && (
+            <div className="flex items-center gap-2 p-3 bg-[#13BCC5]/10 border border-[#13BCC5]/20 rounded-xl mb-4">
+              <Search size={16} className="text-[#13BCC5]" />
+              <span className="text-sm text-[#1b1e4c]">
+                Found <strong>{filteredArticles.length}</strong> articles matching "{searchQuery}"
+              </span>
+            </div>
+          )}
+          <NewsArticlesTable articles={filteredArticles} />
+        </>
       )}
 
       {activeTab === 'stories' && (
-        <SuccessStoriesTable stories={data.successStories} />
+        <>
+          {searchQuery && (
+            <div className="flex items-center gap-2 p-3 bg-[#13BCC5]/10 border border-[#13BCC5]/20 rounded-xl mb-4">
+              <Search size={16} className="text-[#13BCC5]" />
+              <span className="text-sm text-[#1b1e4c]">
+                Found <strong>{filteredStories.length}</strong> stories matching "{searchQuery}"
+              </span>
+            </div>
+          )}
+          <SuccessStoriesTable stories={filteredStories} />
+        </>
       )}
 
       {activeTab === 'schedule' && (
@@ -262,6 +307,10 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'metrics' && (
+        <WeekMetricsForm onRefresh={onRefresh} />
       )}
 
       {activeTab === 'ai' && (

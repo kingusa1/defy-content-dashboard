@@ -27,7 +27,8 @@ const SPREADSHEET_ID = '1TFtKMMAhevtYMTZb1dmx1Xmd9UjJnMyx4abZx9YIUwE';
 const SHEETS = {
   NEWS: 'insurance_news_log',
   SCHEDULE: 'Post Scheduling',
-  SUCCESS: 'customer success post defy insurance'
+  SUCCESS: 'customer success post defy insurance',
+  METRICS: 'Defy insurnace week metrics'
 };
 
 // Initialize Google Sheets API with service account
@@ -40,7 +41,7 @@ async function initializeGoogleSheets() {
 
     const auth = new google.auth.GoogleAuth({
       credentials: credentials,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],  // Full access for read/write
     });
 
     const authClient = await auth.getClient();
@@ -432,6 +433,176 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 });
 
+// ============================================================================
+// WEEK METRICS ENDPOINTS
+// ============================================================================
+
+// Column mapping for week metrics
+const METRICS_COLUMNS = [
+  'status', 'campaign', 'message', 'audience', 'agent',
+  'acceptanceRate', 'replies', 'replyPercent', 'defyLead', 'target',
+  'algoType', 'weekEnd', 'location', 'queue', 'totalInvited',
+  'totalAccepted', 'netNewConnects', 'startingConnects', 'endingConnections',
+  'totalMessaged', 'totalActions'
+];
+
+// Get week metrics
+app.get('/api/metrics', async (req, res) => {
+  try {
+    if (!sheets) {
+      return res.status(503).json({ error: 'Google Sheets not initialized' });
+    }
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEETS.METRICS}'!A:U`,
+    });
+
+    const rows = response.data.values || [];
+    if (rows.length <= 1) {
+      return res.json([]);
+    }
+
+    // Skip header row, map data
+    const data = rows.slice(1).map((row, index) => ({
+      id: `metric-${index}`,
+      rowIndex: index + 2, // Actual row number in sheet (1-indexed + header)
+      status: row[0] || '',
+      campaign: row[1] || '',
+      message: row[2] || '',
+      audience: row[3] || '',
+      agent: row[4] || '',
+      acceptanceRate: row[5] || '',
+      replies: row[6] || '',
+      replyPercent: row[7] || '',
+      defyLead: row[8] || '',
+      target: row[9] || '',
+      algoType: row[10] || '',
+      weekEnd: row[11] || '',
+      location: row[12] || '',
+      queue: row[13] || '',
+      totalInvited: row[14] || '',
+      totalAccepted: row[15] || '',
+      netNewConnects: row[16] || '',
+      startingConnects: row[17] || '',
+      endingConnections: row[18] || '',
+      totalMessaged: row[19] || '',
+      totalActions: row[20] || '',
+    }));
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching metrics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update week metrics row
+app.post('/api/metrics/update', async (req, res) => {
+  try {
+    if (!sheets) {
+      return res.status(503).json({ error: 'Google Sheets not initialized' });
+    }
+
+    const { rowIndex, changes, userRole } = req.body;
+
+    if (!rowIndex || !changes) {
+      return res.status(400).json({ error: 'rowIndex and changes are required' });
+    }
+
+    // Non-admin users can only update defyLead
+    if (userRole !== 'admin') {
+      const allowedFields = ['defyLead'];
+      const attemptedFields = Object.keys(changes);
+      const invalidFields = attemptedFields.filter(f => !allowedFields.includes(f));
+
+      if (invalidFields.length > 0) {
+        return res.status(403).json({
+          error: `You don't have permission to edit: ${invalidFields.join(', ')}. Only Defy Lead can be edited.`
+        });
+      }
+    }
+
+    // First, get the current row data
+    const currentData = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEETS.METRICS}'!A${rowIndex}:U${rowIndex}`,
+    });
+
+    const currentRow = currentData.data.values?.[0] || new Array(21).fill('');
+
+    // Update only the changed columns
+    for (const [key, value] of Object.entries(changes)) {
+      const colIndex = METRICS_COLUMNS.indexOf(key);
+      if (colIndex !== -1) {
+        currentRow[colIndex] = value;
+      }
+    }
+
+    // Write back the updated row
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEETS.METRICS}'!A${rowIndex}:U${rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [currentRow]
+      }
+    });
+
+    res.json({ success: true, message: 'Metrics updated successfully' });
+  } catch (error) {
+    console.error('Error updating metrics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add new week metrics row
+app.post('/api/metrics/add', async (req, res) => {
+  try {
+    if (!sheets) {
+      return res.status(503).json({ error: 'Google Sheets not initialized' });
+    }
+
+    const { data, userRole } = req.body;
+
+    if (!data) {
+      return res.status(400).json({ error: 'data is required' });
+    }
+
+    // Non-admin users can only add defyLead
+    if (userRole !== 'admin') {
+      const allowedFields = ['defyLead'];
+      const attemptedFields = Object.keys(data);
+      const invalidFields = attemptedFields.filter(f => !allowedFields.includes(f));
+
+      if (invalidFields.length > 0) {
+        return res.status(403).json({
+          error: `You don't have permission to add data for: ${invalidFields.join(', ')}. Only Defy Lead can be set.`
+        });
+      }
+    }
+
+    // Build row array from data
+    const newRow = METRICS_COLUMNS.map(col => data[col] || '');
+
+    // Append the new row
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEETS.METRICS}'!A:U`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: [newRow]
+      }
+    });
+
+    res.json({ success: true, message: 'Row added successfully' });
+  } catch (error) {
+    console.error('Error adding metrics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Authentication endpoint
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -514,10 +685,13 @@ initializeGoogleSheets().then(() => {
   app.listen(PORT, () => {
     console.log(`\nServer running on http://localhost:${PORT}`);
     console.log(`\nAPI endpoints:`);
-    console.log(`  GET /api/all      - Get all data`);
-    console.log(`  GET /api/articles - Get news articles`);
-    console.log(`  GET /api/schedule - Get posting schedule`);
-    console.log(`  GET /api/stories  - Get success stories`);
-    console.log(`  GET /api/health   - Health check`);
+    console.log(`  GET  /api/all            - Get all data`);
+    console.log(`  GET  /api/articles       - Get news articles`);
+    console.log(`  GET  /api/schedule       - Get posting schedule`);
+    console.log(`  GET  /api/stories        - Get success stories`);
+    console.log(`  GET  /api/metrics        - Get week metrics`);
+    console.log(`  POST /api/metrics/update - Update week metrics`);
+    console.log(`  POST /api/metrics/add    - Add new week metrics row`);
+    console.log(`  GET  /api/health         - Health check`);
   });
 });

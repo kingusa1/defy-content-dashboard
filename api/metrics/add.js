@@ -62,33 +62,27 @@ export default async function handler(req, res) {
     // Build row array
     const newRow = METRICS_COLUMNS.map(col => data[col] || '');
 
-    // Find the first empty row by reading all data
+    // Find the last row with data to add consecutively after it
     const existingData = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${SHEET_NAME}'!A:U`,
+      range: `'${SHEET_NAME}'!A:A`, // Only check column A for efficiency
     });
 
     const rows = existingData.data.values || [];
 
-    // Find first empty row (skip header row at index 0)
-    // A row is empty if it doesn't exist OR all cells are empty/whitespace
-    let emptyRowIndex = -1;
-
-    // Start checking from row 2 (index 1, after header)
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      // Check if row is empty (no data or all cells empty/whitespace)
-      const isEmpty = !row || row.length === 0 || row.every(cell => !cell || cell.toString().trim() === '');
-      if (isEmpty) {
-        emptyRowIndex = i + 1; // Convert to 1-indexed row number for Sheets API
+    // Find the last row that has data in column A (skip header at index 0)
+    let lastDataRowIndex = 0; // Start at header
+    for (let i = rows.length - 1; i >= 1; i--) {
+      const cell = rows[i]?.[0];
+      if (cell && cell.toString().trim() !== '') {
+        lastDataRowIndex = i;
         break;
       }
     }
 
-    // If no empty row found within existing data, use the next row after all data
-    if (emptyRowIndex === -1) {
-      emptyRowIndex = rows.length + 1; // Next row after existing data
-    }
+    // New row goes immediately after the last row with data
+    // Row index is 0-based in array, but Sheets API is 1-based
+    const emptyRowIndex = lastDataRowIndex + 2; // +1 for 1-based, +1 for next row
 
     // Write to the specific empty row using update() instead of append()
     await sheets.spreadsheets.values.update({

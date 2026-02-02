@@ -585,27 +585,31 @@ app.post('/api/metrics/add', async (req, res) => {
     // Build row array from data
     const newRow = METRICS_COLUMNS.map(col => data[col] || '');
 
-    // Find the last row with data to add consecutively after it
+    // Find the last row with ANY data in ANY column
     const existingData = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${SHEETS.METRICS}'!A:A`, // Only check column A for efficiency
+      range: `'${SHEETS.METRICS}'!A:U`, // Check ALL columns
     });
 
     const rows = existingData.data.values || [];
 
-    // Find the last row that has data in column A (skip header at index 0)
-    let lastDataRowIndex = 0; // Start at header
+    // Find the last row that has ANY data in ANY column (skip header at index 0)
+    let lastDataRowIndex = 0; // Start at header (row 1)
     for (let i = rows.length - 1; i >= 1; i--) {
-      const cell = rows[i]?.[0];
-      if (cell && cell.toString().trim() !== '') {
+      const row = rows[i];
+      // Check if ANY cell in this row has data
+      const hasAnyData = row && row.some(cell => cell && cell.toString().trim() !== '');
+      if (hasAnyData) {
         lastDataRowIndex = i;
         break;
       }
     }
 
     // New row goes immediately after the last row with data
-    // Row index is 0-based in array, but Sheets API is 1-based
-    const emptyRowIndex = lastDataRowIndex + 2; // +1 for 1-based, +1 for next row
+    // Array index is 0-based, Sheets rows are 1-based
+    // So if lastDataRowIndex=881 (array), that's row 882 in sheets
+    // Next empty row is 882+1 = 883
+    const emptyRowIndex = lastDataRowIndex + 2;
 
     // Write to the specific empty row using update() instead of append()
     await sheets.spreadsheets.values.update({

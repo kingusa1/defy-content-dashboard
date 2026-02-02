@@ -14,8 +14,11 @@ const PORT = process.env.PORT || 3001;
 // Enable CORS for frontend
 app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://127.0.0.1:5173'],
-  methods: ['GET'],
+  methods: ['GET', 'POST'],
 }));
+
+// Parse JSON request bodies
+app.use(express.json());
 
 // Google Sheets configuration
 const SPREADSHEET_ID = '1TFtKMMAhevtYMTZb1dmx1Xmd9UjJnMyx4abZx9YIUwE';
@@ -348,6 +351,83 @@ function determineStatus(publishDate) {
     return 'draft';
   }
 }
+
+// Authentication endpoint
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // Try to get users from Google Sheet (optional - create a "Users" sheet)
+    if (sheets) {
+      try {
+        const response = await sheets.spreadsheets.values.get({
+          spreadsheetId: SPREADSHEET_ID,
+          range: "'Users'!A:E",
+        });
+
+        const rows = response.data.values || [];
+        if (rows.length > 1) {
+          const users = rows.slice(1).map((row, index) => ({
+            id: `user-${index}`,
+            email: row[0] || '',
+            password: row[1] || '',
+            name: row[2] || '',
+            role: row[3] || 'viewer',
+            active: row[4]?.toLowerCase() === 'true' || row[4] === '1'
+          }));
+
+          const user = users.find(u =>
+            u.email.toLowerCase() === email.toLowerCase() &&
+            u.password === password &&
+            u.active
+          );
+
+          if (user) {
+            const { password: _pass, ...safeUser } = user;
+            return res.status(200).json({ user: safeUser });
+          }
+        }
+      } catch (sheetError) {
+        console.log('Users sheet not found, using demo accounts');
+      }
+    }
+
+    // Demo account fallback
+    if (email.toLowerCase() === 'demo@defyinsurance.com' && password === 'demo123') {
+      return res.status(200).json({
+        user: {
+          id: 'demo-user',
+          email: 'demo@defyinsurance.com',
+          name: 'Demo User',
+          role: 'admin',
+          active: true
+        }
+      });
+    }
+
+    // Admin account
+    if (email.toLowerCase() === 'admin@defyinsurance.com' && password === 'admin123') {
+      return res.status(200).json({
+        user: {
+          id: 'admin-user',
+          email: 'admin@defyinsurance.com',
+          name: 'Administrator',
+          role: 'admin',
+          active: true
+        }
+      });
+    }
+
+    return res.status(401).json({ error: 'Invalid email or password' });
+  } catch (error) {
+    console.error('Login error:', error);
+    return res.status(500).json({ error: 'Login failed. Please try again.' });
+  }
+});
 
 // Initialize and start server
 initializeGoogleSheets().then(() => {

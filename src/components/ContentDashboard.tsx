@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { RefreshCw, FileText, Calendar, Users, Clock, Download, BarChart3 } from 'lucide-react';
+import { RefreshCw, FileText, Calendar, Users, Clock, Download, BarChart3, Bot, Sparkles } from 'lucide-react';
 import type { ContentData } from '../types/content';
 import StatsOverview from './StatsOverview';
 import NewsArticlesTable from './NewsArticlesTable';
 import SuccessStoriesTable from './SuccessStoriesTable';
 import ScheduleGrid from './ScheduleGrid';
 import ContentAnalytics from './ContentAnalytics';
+import AIAgent from './AIAgent';
 import { exportAllToExcel, exportArticlesToExcel, exportStoriesToExcel } from '../utils/exportUtils';
 
 interface ContentDashboardProps {
@@ -14,7 +15,7 @@ interface ContentDashboardProps {
   loading: boolean;
 }
 
-type TabType = 'overview' | 'articles' | 'stories' | 'schedule' | 'analytics';
+type TabType = 'overview' | 'articles' | 'stories' | 'schedule' | 'analytics' | 'ai';
 
 const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, loading }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -26,6 +27,7 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
     { id: 'stories' as TabType, label: 'Success Stories', icon: <Users size={18} /> },
     { id: 'schedule' as TabType, label: 'Schedule', icon: <Clock size={18} /> },
     { id: 'analytics' as TabType, label: 'Analytics', icon: <BarChart3 size={18} /> },
+    { id: 'ai' as TabType, label: 'AI Assistant', icon: <Bot size={18} />, highlight: true },
   ];
 
   const handleExportAll = async () => {
@@ -107,12 +109,19 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id
-                ? 'bg-white text-[#1b1e4c] shadow-sm'
-                : 'text-slate-600 hover:text-[#1b1e4c]'
+                ? tab.id === 'ai'
+                  ? 'bg-gradient-to-r from-[#13BCC5] to-[#0FA8B0] text-white shadow-lg shadow-[#13BCC5]/30'
+                  : 'bg-white text-[#1b1e4c] shadow-sm'
+                : tab.id === 'ai'
+                  ? 'text-[#13BCC5] hover:bg-[#13BCC5]/10'
+                  : 'text-slate-600 hover:text-[#1b1e4c]'
             }`}
           >
             {tab.icon}
             {tab.label}
+            {tab.id === 'ai' && (
+              <Sparkles size={14} className={activeTab === 'ai' ? 'text-white' : 'text-[#13BCC5]'} />
+            )}
           </button>
         ))}
       </div>
@@ -250,6 +259,68 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
                   : 0}%
               </p>
               <p className="text-sm opacity-80 mt-1">Articles Published</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'ai' && (
+        <div className="space-y-6">
+          {/* AI Header */}
+          <div className="bg-gradient-to-r from-[#1b1e4c] via-[#2a2e5c] to-[#1b1e4c] rounded-2xl p-6 text-white relative overflow-hidden">
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-50" />
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#13BCC5] to-[#0FA8B0] flex items-center justify-center">
+                  <Bot className="w-7 h-7 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    Defy AI Assistant
+                    <Sparkles className="w-5 h-5 text-[#13BCC5]" />
+                  </h3>
+                  <p className="text-white/60 text-sm">Powered by Advanced Language Models</p>
+                </div>
+              </div>
+              <p className="text-white/80 max-w-2xl">
+                Your intelligent business analyst that can analyze your content data, predict outcomes,
+                identify opportunities, and help you make strategic decisions.
+              </p>
+            </div>
+          </div>
+
+          {/* AI Agent Component */}
+          <AIAgent data={data} />
+
+          {/* AI Capabilities */}
+          <div className="grid md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl border border-slate-100 p-4">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center mb-3">
+                <BarChart3 className="w-5 h-5 text-blue-600" />
+              </div>
+              <h4 className="font-semibold text-[#1b1e4c] text-sm">Data Analysis</h4>
+              <p className="text-xs text-slate-500 mt-1">Deep insights from your content metrics</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-100 p-4">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center mb-3">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+              </div>
+              <h4 className="font-semibold text-[#1b1e4c] text-sm">Predictions</h4>
+              <p className="text-xs text-slate-500 mt-1">Forecast future performance trends</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-100 p-4">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center mb-3">
+                <FileText className="w-5 h-5 text-emerald-600" />
+              </div>
+              <h4 className="font-semibold text-[#1b1e4c] text-sm">Content Ideas</h4>
+              <p className="text-xs text-slate-500 mt-1">Generate creative post suggestions</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-100 p-4">
+              <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center mb-3">
+                <Clock className="w-5 h-5 text-amber-600" />
+              </div>
+              <h4 className="font-semibold text-[#1b1e4c] text-sm">Strategy</h4>
+              <p className="text-xs text-slate-500 mt-1">Optimal posting schedules & timing</p>
             </div>
           </div>
         </div>

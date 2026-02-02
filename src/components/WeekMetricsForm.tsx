@@ -854,6 +854,9 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     setDateDropdownOpen(false);
                   }}
                   className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-[#1b1e4c] hover:bg-slate-200 transition-colors min-w-[160px] justify-between"
+                  aria-label="Select agent filter"
+                  aria-expanded={agentDropdownOpen}
+                  aria-haspopup="listbox"
                 >
                   <span className="truncate">
                     {selectedAgent === 'all' ? 'All Agents' : selectedAgent}
@@ -952,6 +955,9 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
                     setAgentDropdownOpen(false);
                   }}
                   className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-[#1b1e4c] hover:bg-slate-200 transition-colors min-w-[160px] justify-between"
+                  aria-label="Select date filter"
+                  aria-expanded={dateDropdownOpen}
+                  aria-haspopup="listbox"
                 >
                   <span className="truncate">
                     {selectedDate === 'all' ? 'All Dates' : selectedDate}
@@ -2048,7 +2054,11 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
 
       {/* Insurance Data Analytics - Full Enterprise Dashboard */}
       {activeView === 'insurance' && (
-        <InsuranceDataAnalytics metrics={filteredMetrics} />
+        <InsuranceDataAnalytics
+          metrics={filteredMetrics}
+          allMetrics={metrics}
+          selectedAgent={selectedAgent}
+        />
       )}
 
       {/* Quick Analytics View */}

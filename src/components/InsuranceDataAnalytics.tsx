@@ -10,8 +10,13 @@ import {
   CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, Sparkles,
   Brain, Lightbulb, Network, UserPlus, Users,
   MessageSquare, Star, Crown, Info,
-  Shield, Building2, AlertCircle, ThumbsUp
+  Shield, Building2, AlertCircle, ThumbsUp, Download, FileSpreadsheet,
+  Trophy, Flame
 } from 'lucide-react';
+import { exportToCSV } from '../utils/metricsUtils';
+
+// Personal goals storage key
+const GOALS_STORAGE_KEY = 'insurance_analytics_goals';
 
 // ============================================================================
 // INDUSTRY BENCHMARKS (2024-2025 Research Data)
@@ -120,6 +125,8 @@ interface WeekMetric {
 
 interface InsuranceDataAnalyticsProps {
   metrics: WeekMetric[];
+  allMetrics?: WeekMetric[];
+  selectedAgent?: string;
 }
 
 // ============================================================================
@@ -195,33 +202,106 @@ const calculateConfidenceInterval = (data: number[], confidence: number = 0.95):
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
-const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics }) => {
+// Goal type definition
+interface PersonalGoal {
+  id: string;
+  agentName: string;
+  metric: 'acceptanceRate' | 'replyRate' | 'invited' | 'accepted';
+  target: number;
+  createdAt: string;
+}
+
+const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics, allMetrics, selectedAgent }) => {
   const [activeTab, setActiveTab] = useState<'executive' | 'performance' | 'benchmarks' | 'predictions' | 'insights'>('executive');
   const [showFilters, setShowFilters] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
 
-  // Get unique filter options
+  // Personal goals state
+  const [goals, setGoals] = useState<PersonalGoal[]>(() => {
+    try {
+      const saved = localStorage.getItem(GOALS_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [newGoal, setNewGoal] = useState<{ metric: string; target: string }>({ metric: 'acceptanceRate', target: '' });
+
+  // Determine if viewing individual or team
+  const isIndividualView = selectedAgent && selectedAgent !== 'all';
+  const teamMetrics = allMetrics || metrics;
+
+  // Save goals to localStorage
+  React.useEffect(() => {
+    localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(goals));
+  }, [goals]);
+
+  // Get goals for current agent
+  const agentGoals = useMemo(() => {
+    if (!selectedAgent || selectedAgent === 'all') return [];
+    return goals.filter(g => g.agentName === selectedAgent);
+  }, [goals, selectedAgent]);
+
+  // Add new goal
+  const handleAddGoal = () => {
+    if (!selectedAgent || selectedAgent === 'all' || !newGoal.target) return;
+
+    const goal: PersonalGoal = {
+      id: Date.now().toString(),
+      agentName: selectedAgent,
+      metric: newGoal.metric as PersonalGoal['metric'],
+      target: parseFloat(newGoal.target),
+      createdAt: new Date().toISOString()
+    };
+
+    setGoals(prev => [...prev, goal]);
+    setNewGoal({ metric: 'acceptanceRate', target: '' });
+    setShowGoalModal(false);
+  };
+
+  // Remove goal
+  const handleRemoveGoal = (goalId: string) => {
+    setGoals(prev => prev.filter(g => g.id !== goalId));
+  };
+
+  // Get unique filter options (from current metrics, not all)
   const filterOptions = useMemo(() => ({
-    agents: [...new Set(metrics.map(m => m.agent).filter(Boolean))].sort(),
     campaigns: [...new Set(metrics.map(m => m.campaign).filter(Boolean))].sort(),
     locations: [...new Set(metrics.map(m => m.location).filter(Boolean))].sort(),
     audiences: [...new Set(metrics.map(m => m.audience).filter(Boolean))].sort()
   }), [metrics]);
 
-  // Filter metrics
+  // Filter metrics (already agent-filtered from parent, just apply additional filters)
   const filteredMetrics = useMemo(() => {
     return metrics.filter(m => {
       if (dateRange.start && m.weekEnd < dateRange.start) return false;
       if (dateRange.end && m.weekEnd > dateRange.end) return false;
-      if (selectedAgents.length > 0 && !selectedAgents.includes(m.agent)) return false;
       if (selectedCampaigns.length > 0 && !selectedCampaigns.includes(m.campaign)) return false;
       if (selectedLocations.length > 0 && !selectedLocations.includes(m.location)) return false;
       return true;
     });
-  }, [metrics, dateRange, selectedAgents, selectedCampaigns, selectedLocations]);
+  }, [metrics, dateRange, selectedCampaigns, selectedLocations]);
+
+  // Calculate team averages for comparison (when viewing individual)
+  const teamAnalytics = useMemo(() => {
+    if (!isIndividualView || !teamMetrics.length) return null;
+
+    const totalInvited = teamMetrics.reduce((sum, m) => sum + parseNum(m.totalInvited), 0);
+    const totalAccepted = teamMetrics.reduce((sum, m) => sum + parseNum(m.totalAccepted), 0);
+    const totalMessaged = teamMetrics.reduce((sum, m) => sum + parseNum(m.totalMessaged), 0);
+    const totalReplies = teamMetrics.reduce((sum, m) => sum + parseNum(m.replies), 0);
+
+    return {
+      avgAcceptanceRate: totalInvited > 0 ? (totalAccepted / totalInvited) * 100 : 0,
+      avgReplyRate: totalMessaged > 0 ? (totalReplies / totalMessaged) * 100 : 0,
+      totalInvited,
+      totalAccepted,
+      totalReplies
+    };
+  }, [isIndividualView, teamMetrics]);
 
   // ============================================================================
   // COMPREHENSIVE ANALYTICS CALCULATIONS
@@ -675,9 +755,9 @@ const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics
         <div className="flex items-center gap-3">
           <Filter size={20} className="text-[#13BCC5]" />
           <span className="font-semibold text-[#1b1e4c]">Filters & Controls</span>
-          {(selectedAgents.length > 0 || selectedCampaigns.length > 0 || selectedLocations.length > 0 || dateRange.start || dateRange.end) && (
+          {(selectedCampaigns.length > 0 || selectedLocations.length > 0 || dateRange.start || dateRange.end) && (
             <span className="text-xs bg-[#13BCC5] text-white px-2 py-0.5 rounded-full">
-              {selectedAgents.length + selectedCampaigns.length + selectedLocations.length + (dateRange.start ? 1 : 0) + (dateRange.end ? 1 : 0)} active
+              {selectedCampaigns.length + selectedLocations.length + (dateRange.start ? 1 : 0) + (dateRange.end ? 1 : 0)} active
             </span>
           )}
         </div>
@@ -686,7 +766,7 @@ const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics
 
       {showFilters && (
         <div className="p-4 border-t border-slate-100 bg-slate-50">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Date Range */}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-2">Date Range</label>
@@ -704,21 +784,6 @@ const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics
                   className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5]"
                 />
               </div>
-            </div>
-
-            {/* Agent Filter */}
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-2">Agents</label>
-              <select
-                multiple
-                value={selectedAgents}
-                onChange={e => setSelectedAgents(Array.from(e.target.selectedOptions, o => o.value))}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#13BCC5]/30 focus:border-[#13BCC5] max-h-24"
-              >
-                {filterOptions.agents.map(agent => (
-                  <option key={agent} value={agent}>{agent}</option>
-                ))}
-              </select>
             </div>
 
             {/* Campaign Filter */}
@@ -753,10 +818,9 @@ const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics
           </div>
 
           {/* Clear Filters */}
-          {(selectedAgents.length > 0 || selectedCampaigns.length > 0 || selectedLocations.length > 0 || dateRange.start || dateRange.end) && (
+          {(selectedCampaigns.length > 0 || selectedLocations.length > 0 || dateRange.start || dateRange.end) && (
             <button
               onClick={() => {
-                setSelectedAgents([]);
                 setSelectedCampaigns([]);
                 setSelectedLocations([]);
                 setDateRange({ start: '', end: '' });
@@ -933,11 +997,314 @@ const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics
           </div>
         </div>
 
+        {/* Personal vs Team Comparison (Individual View Only) */}
+        {isIndividualView && teamAnalytics && (
+          <div className="bg-white rounded-xl border border-slate-100 p-6">
+            <h3 className="text-lg font-bold text-[#1b1e4c] mb-4 flex items-center gap-2">
+              <Users size={20} className="text-[#13BCC5]" />
+              Your Performance vs Team
+            </h3>
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Acceptance Rate Comparison */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">Acceptance Rate</span>
+                  <span className={`text-sm font-bold ${
+                    analytics.overallAcceptanceRate >= teamAnalytics.avgAcceptanceRate
+                      ? 'text-emerald-600' : 'text-red-500'
+                  }`}>
+                    {analytics.overallAcceptanceRate >= teamAnalytics.avgAcceptanceRate ? '↑' : '↓'}
+                    {Math.abs(analytics.overallAcceptanceRate - teamAnalytics.avgAcceptanceRate).toFixed(1)}%
+                    {analytics.overallAcceptanceRate >= teamAnalytics.avgAcceptanceRate ? ' above' : ' below'} team
+                  </span>
+                </div>
+                <div className="relative h-6 bg-slate-100 rounded-full overflow-hidden">
+                  {/* Team average marker */}
+                  <div
+                    className="absolute top-0 h-full w-0.5 bg-amber-500 z-10"
+                    style={{ left: `${Math.min(100, teamAnalytics.avgAcceptanceRate * 1.5)}%` }}
+                  />
+                  {/* Your rate bar */}
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      analytics.overallAcceptanceRate >= teamAnalytics.avgAcceptanceRate
+                        ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
+                        : 'bg-gradient-to-r from-amber-400 to-amber-500'
+                    }`}
+                    style={{ width: `${Math.min(100, analytics.overallAcceptanceRate * 1.5)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>You: {analytics.overallAcceptanceRate.toFixed(1)}%</span>
+                  <span>Team Avg: {teamAnalytics.avgAcceptanceRate.toFixed(1)}%</span>
+                </div>
+              </div>
+
+              {/* Reply Rate Comparison */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">Reply Rate</span>
+                  <span className={`text-sm font-bold ${
+                    analytics.overallReplyRate >= teamAnalytics.avgReplyRate
+                      ? 'text-emerald-600' : 'text-red-500'
+                  }`}>
+                    {analytics.overallReplyRate >= teamAnalytics.avgReplyRate ? '↑' : '↓'}
+                    {Math.abs(analytics.overallReplyRate - teamAnalytics.avgReplyRate).toFixed(1)}%
+                    {analytics.overallReplyRate >= teamAnalytics.avgReplyRate ? ' above' : ' below'} team
+                  </span>
+                </div>
+                <div className="relative h-6 bg-slate-100 rounded-full overflow-hidden">
+                  {/* Team average marker */}
+                  <div
+                    className="absolute top-0 h-full w-0.5 bg-amber-500 z-10"
+                    style={{ left: `${Math.min(100, teamAnalytics.avgReplyRate * 3)}%` }}
+                  />
+                  {/* Your rate bar */}
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      analytics.overallReplyRate >= teamAnalytics.avgReplyRate
+                        ? 'bg-gradient-to-r from-purple-400 to-purple-500'
+                        : 'bg-gradient-to-r from-amber-400 to-amber-500'
+                    }`}
+                    style={{ width: `${Math.min(100, analytics.overallReplyRate * 3)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>You: {analytics.overallReplyRate.toFixed(1)}%</span>
+                  <span>Team Avg: {teamAnalytics.avgReplyRate.toFixed(1)}%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Volume Comparison */}
+            <div className="mt-6 grid grid-cols-3 gap-4">
+              <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl">
+                <p className="text-2xl font-bold text-blue-800">{formatNumber(analytics.totalInvited)}</p>
+                <p className="text-xs text-blue-600">Your Invitations</p>
+                <p className="text-xs text-blue-500 mt-1">
+                  {((analytics.totalInvited / (teamAnalytics.totalInvited || 1)) * 100).toFixed(0)}% of team total
+                </p>
+              </div>
+              <div className="text-center p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl">
+                <p className="text-2xl font-bold text-emerald-800">{formatNumber(analytics.totalAccepted)}</p>
+                <p className="text-xs text-emerald-600">Your Connections</p>
+                <p className="text-xs text-emerald-500 mt-1">
+                  {((analytics.totalAccepted / (teamAnalytics.totalAccepted || 1)) * 100).toFixed(0)}% of team total
+                </p>
+              </div>
+              <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl">
+                <p className="text-2xl font-bold text-purple-800">{formatNumber(analytics.totalReplies)}</p>
+                <p className="text-xs text-purple-600">Your Replies</p>
+                <p className="text-xs text-purple-500 mt-1">
+                  {((analytics.totalReplies / (teamAnalytics.totalReplies || 1)) * 100).toFixed(0)}% of team total
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Personal Goals Tracking (Individual View Only) */}
+        {isIndividualView && (
+          <div className="bg-white rounded-xl border border-slate-100 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-[#1b1e4c] flex items-center gap-2">
+                <Trophy size={20} className="text-amber-500" />
+                Personal Goals
+              </h3>
+              <button
+                onClick={() => setShowGoalModal(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                aria-label="Add new personal goal"
+              >
+                <Target size={16} />
+                Add Goal
+              </button>
+            </div>
+
+            {agentGoals.length === 0 ? (
+              <div className="text-center py-8">
+                <Target size={40} className="text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500">No goals set yet</p>
+                <p className="text-sm text-slate-400 mt-1">Add a goal to track your progress</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {agentGoals.map(goal => {
+                  let currentValue = 0;
+                  let label = '';
+                  let icon = Target;
+
+                  if (goal.metric === 'acceptanceRate') {
+                    currentValue = analytics.overallAcceptanceRate;
+                    label = 'Acceptance Rate';
+                    icon = CheckCircle2;
+                  } else if (goal.metric === 'replyRate') {
+                    currentValue = analytics.overallReplyRate;
+                    label = 'Reply Rate';
+                    icon = MessageSquare;
+                  } else if (goal.metric === 'invited') {
+                    currentValue = analytics.totalInvited;
+                    label = 'Invitations';
+                    icon = UserPlus;
+                  } else if (goal.metric === 'accepted') {
+                    currentValue = analytics.totalAccepted;
+                    label = 'Connections';
+                    icon = Users;
+                  }
+
+                  const progress = Math.min(100, (currentValue / goal.target) * 100);
+                  const achieved = currentValue >= goal.target;
+                  const Icon = icon;
+
+                  return (
+                    <div key={goal.id} className={`p-4 rounded-xl border-2 ${achieved ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${achieved ? 'bg-emerald-100' : 'bg-slate-200'}`}>
+                            <Icon size={20} className={achieved ? 'text-emerald-600' : 'text-slate-500'} />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-[#1b1e4c]">{label}</p>
+                            <p className="text-xs text-slate-500">
+                              Target: {goal.metric.includes('Rate') ? `${goal.target}%` : formatNumber(goal.target)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {achieved && (
+                            <span className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                              <Flame size={12} />
+                              Achieved!
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleRemoveGoal(goal.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            aria-label="Remove goal"
+                          >
+                            <XCircle size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="space-y-2">
+                        <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              achieved
+                                ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
+                                : 'bg-gradient-to-r from-amber-400 to-amber-500'
+                            }`}
+                            style={{ width: `${Math.min(100, progress)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-600">
+                            Current: {goal.metric.includes('Rate') ? `${currentValue.toFixed(1)}%` : formatNumber(currentValue)}
+                          </span>
+                          <span className={`font-medium ${achieved ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {progress.toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Goal Modal */}
+        {showGoalModal && isIndividualView && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-bold text-[#1b1e4c] text-lg flex items-center gap-2">
+                  <Trophy size={20} className="text-amber-500" />
+                  Set New Goal
+                </h4>
+                <button
+                  onClick={() => {
+                    setShowGoalModal(false);
+                    setNewGoal({ metric: 'acceptanceRate', target: '' });
+                  }}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                  aria-label="Close modal"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-2">
+                    Metric to Track
+                  </label>
+                  <select
+                    value={newGoal.metric}
+                    onChange={(e) => setNewGoal(prev => ({ ...prev, metric: e.target.value }))}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                  >
+                    <option value="acceptanceRate">Acceptance Rate (%)</option>
+                    <option value="replyRate">Reply Rate (%)</option>
+                    <option value="invited">Total Invitations</option>
+                    <option value="accepted">Total Connections</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-2">
+                    Target Value
+                  </label>
+                  <input
+                    type="number"
+                    value={newGoal.target}
+                    onChange={(e) => setNewGoal(prev => ({ ...prev, target: e.target.value }))}
+                    placeholder={newGoal.metric.includes('Rate') ? 'e.g., 35' : 'e.g., 500'}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                    min="0"
+                    step={newGoal.metric.includes('Rate') ? '0.1' : '1'}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    {newGoal.metric.includes('Rate')
+                      ? `Industry benchmark: ${INDUSTRY_BENCHMARKS.linkedin.acceptanceRate.average}%`
+                      : 'Set a realistic target based on your capacity'
+                    }
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setShowGoalModal(false);
+                      setNewGoal({ metric: 'acceptanceRate', target: '' });
+                    }}
+                    className="flex-1 px-4 py-3 text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddGoal}
+                    disabled={!newGoal.target}
+                    className="flex-1 px-4 py-3 bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Set Goal
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Quick Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
-            <p className="text-sm text-blue-600 font-medium">Active Agents</p>
-            <p className="text-3xl font-bold text-blue-800">{analytics.agentPerformance.length}</p>
+            <p className="text-sm text-blue-600 font-medium">{isIndividualView ? 'Your Campaigns' : 'Active Agents'}</p>
+            <p className="text-3xl font-bold text-blue-800">
+              {isIndividualView ? analytics.campaignPerformance.length : analytics.agentPerformance.length}
+            </p>
           </div>
           <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4">
             <p className="text-sm text-purple-600 font-medium">Active Campaigns</p>
@@ -1648,15 +2015,129 @@ const InsuranceDataAnalytics: React.FC<InsuranceDataAnalyticsProps> = ({ metrics
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[#1b1e4c]">Insurance Data Analytics</h1>
-          <p className="text-slate-500">Enterprise-grade insights with industry benchmarks</p>
+      {/* Individual Agent Profile Banner */}
+      {isIndividualView && analytics && (
+        <div className="bg-gradient-to-r from-[#1b1e4c] via-[#2a2e5c] to-[#1b1e4c] rounded-2xl p-6 text-white">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#13BCC5] to-purple-500 flex items-center justify-center text-2xl font-bold shadow-lg">
+                {selectedAgent?.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">{selectedAgent}'s Dashboard</h2>
+                <p className="text-white/70">Personal performance & insights</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className="text-2xl font-bold text-[#13BCC5]">{analytics.overallAcceptanceRate.toFixed(1)}%</p>
+                <p className="text-xs text-white/70">Your Acceptance</p>
+              </div>
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className="text-2xl font-bold text-purple-400">{teamAnalytics?.avgAcceptanceRate.toFixed(1) || 0}%</p>
+                <p className="text-xs text-white/70">Team Average</p>
+              </div>
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className={`text-2xl font-bold ${
+                  (analytics.overallAcceptanceRate - (teamAnalytics?.avgAcceptanceRate || 0)) >= 0
+                    ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  {(analytics.overallAcceptanceRate - (teamAnalytics?.avgAcceptanceRate || 0)) >= 0 ? '+' : ''}
+                  {(analytics.overallAcceptanceRate - (teamAnalytics?.avgAcceptanceRate || 0)).toFixed(1)}%
+                </p>
+                <p className="text-xs text-white/70">vs Team</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <Shield size={16} className="text-[#13BCC5]" />
-          <span>Analyzing {filteredMetrics.length} records</span>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1b1e4c]">
+            {isIndividualView ? `${selectedAgent}'s Analytics` : 'Insurance Data Analytics'}
+          </h1>
+          <p className="text-slate-500">
+            {isIndividualView
+              ? 'Personal performance metrics & insights'
+              : 'Enterprise-grade insights with industry benchmarks'
+            }
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Shield size={16} className="text-[#13BCC5]" />
+            <span>Analyzing {filteredMetrics.length} records</span>
+          </div>
+          {/* Export Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const exportData = filteredMetrics.map(m => ({
+                  Agent: m.agent,
+                  Campaign: m.campaign,
+                  'Week End': m.weekEnd,
+                  'Total Invited': m.totalInvited,
+                  'Total Accepted': m.totalAccepted,
+                  'Acceptance Rate': m.acceptanceRate,
+                  'Total Messaged': m.totalMessaged,
+                  Replies: m.replies,
+                  'Reply %': m.replyPercent,
+                  'Defy Lead': m.defyLead,
+                  Location: m.location,
+                  Audience: m.audience,
+                  Status: m.status
+                }));
+                exportToCSV(exportData, isIndividualView ? `${selectedAgent}_metrics` : 'team_metrics');
+              }}
+              className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors text-sm font-medium"
+              aria-label="Export data to CSV"
+            >
+              <FileSpreadsheet size={16} />
+              <span className="hidden sm:inline">Export CSV</span>
+            </button>
+            {analytics && (
+              <button
+                onClick={() => {
+                  const summaryData = [{
+                    Metric: 'Total Invited',
+                    Value: analytics.totalInvited
+                  }, {
+                    Metric: 'Total Accepted',
+                    Value: analytics.totalAccepted
+                  }, {
+                    Metric: 'Acceptance Rate',
+                    Value: analytics.overallAcceptanceRate.toFixed(1) + '%'
+                  }, {
+                    Metric: 'Total Messaged',
+                    Value: analytics.totalMessaged
+                  }, {
+                    Metric: 'Total Replies',
+                    Value: analytics.totalReplies
+                  }, {
+                    Metric: 'Reply Rate',
+                    Value: analytics.overallReplyRate.toFixed(1) + '%'
+                  }, {
+                    Metric: 'Net New Connects',
+                    Value: analytics.netNewConnects
+                  }, {
+                    Metric: 'Performance Tier',
+                    Value: analytics.performanceTier.label
+                  }, {
+                    Metric: 'vs Benchmark',
+                    Value: (analytics.acceptanceVsBenchmark >= 0 ? '+' : '') + analytics.acceptanceVsBenchmark.toFixed(1) + '%'
+                  }];
+                  exportToCSV(summaryData, isIndividualView ? `${selectedAgent}_summary` : 'analytics_summary');
+                }}
+                className="flex items-center gap-2 px-3 py-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-colors text-sm font-medium"
+                aria-label="Export summary report"
+              >
+                <Download size={16} />
+                <span className="hidden sm:inline">Summary</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

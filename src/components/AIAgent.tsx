@@ -25,7 +25,7 @@ interface AIAgentProps {
   data: ContentData;
 }
 
-const POLLINATIONS_URL = 'https://text.pollinations.ai';
+const POLLINATIONS_API = 'https://text.pollinations.ai/openai';
 
 // System prompt for the AI
 const getSystemPrompt = (data: ContentData) => `You are an advanced AI business analyst and decision-making assistant for Defy Insurance, a cutting-edge insurance company. You have access to real-time content management data and must provide strategic insights, predictions, and recommendations.
@@ -109,25 +109,33 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
     setShowQuickActions(false);
 
     try {
-      // Build conversation history for context
-      const conversationHistory = messages.map(m => ({
-        role: m.role,
-        content: m.content
-      }));
+      // Build messages array for OpenAI-compatible API
+      const apiMessages = [
+        { role: 'system', content: getSystemPrompt(data) },
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: messageText }
+      ];
 
-      // Add system prompt and user message
-      const fullPrompt = `${getSystemPrompt(data)}\n\nConversation History:\n${conversationHistory.map(m => `${m.role}: ${m.content}`).join('\n')}\n\nUser: ${messageText}\n\nAssistant:`;
-
-      // Call Pollinations API
-      const response = await fetch(`${POLLINATIONS_URL}/${encodeURIComponent(fullPrompt)}?model=openai-large&json=false`, {
-        method: 'GET',
+      // Call Pollinations OpenAI-compatible API
+      const response = await fetch(POLLINATIONS_API, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'openai',
+          messages: apiMessages,
+          temperature: 0.7,
+          max_tokens: 2000,
+        }),
       });
 
       if (!response.ok) {
         throw new Error('Failed to get AI response');
       }
 
-      const aiResponse = await response.text();
+      const result = await response.json();
+      const aiResponse = result.choices?.[0]?.message?.content || 'No response received';
 
       const assistantMessage: AIMessage = {
         id: `msg-${Date.now()}-ai`,

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { RefreshCw, FileText, Calendar, Users, Clock, Download, BarChart3, Bot, Sparkles, TrendingUp, Search, Eye, PieChart } from 'lucide-react';
+import { RefreshCw, FileText, Calendar, Users, Clock, Download, BarChart3, Bot, Sparkles, TrendingUp, Search, Eye, PieChart, X, AlertCircle } from 'lucide-react';
 import type { ContentData } from '../types/content';
 import StatsOverview from './StatsOverview';
 import NewsArticlesTable from './NewsArticlesTable';
@@ -29,7 +29,7 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
   const [articlesView, setArticlesView] = useState<ViewMode>('analytics');
   const [storiesView, setStoriesView] = useState<ViewMode>('analytics');
   const [scheduleView, setScheduleView] = useState<ViewMode>('analytics');
-  const { searchQuery } = useSearch();
+  const { searchQuery, clearSearch } = useSearch();
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: <Calendar size={18} /> },
@@ -61,6 +61,33 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
       story.date?.toLowerCase().includes(query)
     );
   }, [data.successStories, searchQuery]);
+
+  const filteredSchedule = useMemo(() => {
+    if (!searchQuery.trim()) return data.schedule;
+    const query = searchQuery.toLowerCase();
+    return data.schedule.filter(entry =>
+      entry.agentName?.toLowerCase().includes(query) ||
+      entry.sunday?.toLowerCase().includes(query) ||
+      entry.monday?.toLowerCase().includes(query) ||
+      entry.tuesday?.toLowerCase().includes(query) ||
+      entry.wednesday?.toLowerCase().includes(query) ||
+      entry.thursday?.toLowerCase().includes(query) ||
+      entry.friday?.toLowerCase().includes(query) ||
+      entry.saturday?.toLowerCase().includes(query)
+    );
+  }, [data.schedule, searchQuery]);
+
+  // Check if there are any search results across all data
+  const hasSearchResults = useMemo(() => {
+    if (!searchQuery.trim()) return true;
+    return filteredArticles.length > 0 || filteredStories.length > 0 || filteredSchedule.length > 0;
+  }, [searchQuery, filteredArticles.length, filteredStories.length, filteredSchedule.length]);
+
+  // Total search results count
+  const totalSearchResults = useMemo(() => {
+    if (!searchQuery.trim()) return 0;
+    return filteredArticles.length + filteredStories.length + filteredSchedule.length;
+  }, [searchQuery, filteredArticles.length, filteredStories.length, filteredSchedule.length]);
 
   const handleExportAll = async () => {
     setExporting(true);
@@ -184,6 +211,47 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
         </div>
       </div>
 
+      {/* Global Search Banner */}
+      {searchQuery && (
+        <div className={`flex items-center justify-between p-4 rounded-xl border ${
+          hasSearchResults
+            ? 'bg-[#13BCC5]/10 border-[#13BCC5]/20'
+            : 'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-center gap-3">
+            {hasSearchResults ? (
+              <Search size={20} className="text-[#13BCC5]" />
+            ) : (
+              <AlertCircle size={20} className="text-red-500" />
+            )}
+            <div>
+              <p className={`font-medium ${hasSearchResults ? 'text-[#1b1e4c]' : 'text-red-700'}`}>
+                {hasSearchResults
+                  ? `Found ${totalSearchResults} results for "${searchQuery}"`
+                  : `No results found for "${searchQuery}"`
+                }
+              </p>
+              {hasSearchResults && (
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {filteredArticles.length} articles • {filteredStories.length} stories • {filteredSchedule.length} schedules
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={clearSearch}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              hasSearchResults
+                ? 'bg-[#13BCC5]/20 text-[#13BCC5] hover:bg-[#13BCC5]/30'
+                : 'bg-red-100 text-red-600 hover:bg-red-200'
+            }`}
+          >
+            <X size={14} />
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Tab Content */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
@@ -201,7 +269,10 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-[#1b1e4c]">Recent Articles</h3>
+                <h3 className="text-lg font-bold text-[#1b1e4c]">
+                  {searchQuery ? 'Matching Articles' : 'Recent Articles'}
+                  {searchQuery && <span className="text-sm font-normal text-slate-500 ml-2">({filteredArticles.length})</span>}
+                </h3>
                 <button
                   onClick={() => setActiveTab('articles')}
                   className="text-xs text-[#13BCC5] hover:underline"
@@ -210,7 +281,7 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
                 </button>
               </div>
               <div className="space-y-3">
-                {data.articles.slice(0, 5).map((article) => (
+                {(searchQuery ? filteredArticles : data.articles).slice(0, 5).map((article) => (
                   <div key={article.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
                     <div className={`w-2 h-2 rounded-full mt-2 ${
                       article.status === 'published' ? 'bg-emerald-500' : 'bg-blue-500'
@@ -221,15 +292,20 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
                     </div>
                   </div>
                 ))}
-                {data.articles.length === 0 && (
-                  <p className="text-sm text-slate-500 text-center py-4">No articles yet</p>
+                {(searchQuery ? filteredArticles : data.articles).length === 0 && (
+                  <p className="text-sm text-slate-500 text-center py-4">
+                    {searchQuery ? 'No articles match your search' : 'No articles yet'}
+                  </p>
                 )}
               </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-[#1b1e4c]">Recent Success Stories</h3>
+                <h3 className="text-lg font-bold text-[#1b1e4c]">
+                  {searchQuery ? 'Matching Stories' : 'Recent Success Stories'}
+                  {searchQuery && <span className="text-sm font-normal text-slate-500 ml-2">({filteredStories.length})</span>}
+                </h3>
                 <button
                   onClick={() => setActiveTab('stories')}
                   className="text-xs text-[#13BCC5] hover:underline"
@@ -238,7 +314,7 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
                 </button>
               </div>
               <div className="space-y-3">
-                {data.successStories.slice(0, 5).map((story) => (
+                {(searchQuery ? filteredStories : data.successStories).slice(0, 5).map((story) => (
                   <div key={story.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
                     <div className={`w-2 h-2 rounded-full mt-2 ${
                       story.status === 'completed' ? 'bg-emerald-500' : 'bg-amber-500'
@@ -251,16 +327,25 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
                     </div>
                   </div>
                 ))}
-                {data.successStories.length === 0 && (
-                  <p className="text-sm text-slate-500 text-center py-4">No success stories yet</p>
+                {(searchQuery ? filteredStories : data.successStories).length === 0 && (
+                  <p className="text-sm text-slate-500 text-center py-4">
+                    {searchQuery ? 'No stories match your search' : 'No success stories yet'}
+                  </p>
                 )}
               </div>
             </div>
           </div>
 
           {/* Schedule Preview */}
-          {data.schedule.length > 0 && (
-            <ScheduleGrid schedule={data.schedule} />
+          {(searchQuery ? filteredSchedule : data.schedule).length > 0 && (
+            <div>
+              {searchQuery && (
+                <h3 className="text-lg font-bold text-[#1b1e4c] mb-4">
+                  Matching Schedules <span className="text-sm font-normal text-slate-500">({filteredSchedule.length})</span>
+                </h3>
+              )}
+              <ScheduleGrid schedule={searchQuery ? filteredSchedule : data.schedule} />
+            </div>
           )}
         </div>
       )}
@@ -332,10 +417,19 @@ const ContentDashboard: React.FC<ContentDashboardProps> = ({ data, onRefresh, lo
             <ViewToggle view={scheduleView} setView={setScheduleView} />
           </div>
 
+          {searchQuery && (
+            <div className="flex items-center gap-2 p-3 bg-[#13BCC5]/10 border border-[#13BCC5]/20 rounded-xl">
+              <Search size={16} className="text-[#13BCC5]" />
+              <span className="text-sm text-[#1b1e4c]">
+                Found <strong>{filteredSchedule.length}</strong> agents matching "{searchQuery}"
+              </span>
+            </div>
+          )}
+
           {scheduleView === 'analytics' ? (
-            <ScheduleAnalytics schedule={data.schedule} />
+            <ScheduleAnalytics schedule={filteredSchedule} />
           ) : (
-            <ScheduleGrid schedule={data.schedule} />
+            <ScheduleGrid schedule={filteredSchedule} />
           )}
         </div>
       )}

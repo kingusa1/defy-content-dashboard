@@ -16,17 +16,21 @@ import {
   Brain,
   Zap,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Shield,
+  Activity,
+  Server,
+  CheckCircle2,
+  XCircle,
+  Clock
 } from 'lucide-react';
 import type { ContentData } from '../types/content';
 import type { AIMessage } from '../types/ai';
+import { sendMessage, getModelHealthStatus, isServiceHealthy, type AIResponse } from '../services/pollinationsAI';
 
 interface AIAgentProps {
   data: ContentData;
 }
-
-// Pollinations AI API - free, no API key required
-const POLLINATIONS_TEXT_API = 'https://text.pollinations.ai/';
 
 const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
   const [messages, setMessages] = useState<AIMessage[]>([]);
@@ -35,6 +39,9 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
+  const [showHealth, setShowHealth] = useState(false);
+  const [lastModelUsed, setLastModelUsed] = useState<string | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<'healthy' | 'degraded' | 'offline'>('healthy');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -42,6 +49,62 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Check service health periodically
+  useEffect(() => {
+    const checkHealth = () => {
+      const healthy = isServiceHealthy();
+      const healthStatus = getModelHealthStatus();
+      const healthyModels = Object.values(healthStatus).filter(h => h.successRate > 50).length;
+
+      if (!healthy) {
+        setServiceStatus('offline');
+      } else if (healthyModels < 3) {
+        setServiceStatus('degraded');
+      } else {
+        setServiceStatus('healthy');
+      }
+    };
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Build context from dashboard data
+  const buildSystemPrompt = () => {
+    return `You are the Defy Insurance AI Assistant - an expert business analyst specializing in content strategy and insurance industry insights.
+
+CURRENT DASHBOARD DATA:
+- Total Articles: ${data.stats.totalArticles}
+- Published: ${data.stats.publishedPosts}
+- Scheduled: ${data.stats.scheduledPosts}
+- Total Success Stories: ${data.stats.totalSuccessStories}
+- Completed Stories: ${data.stats.completedStories}
+- Pending Stories: ${data.stats.pendingStories}
+
+RECENT ARTICLES (Last 5):
+${data.articles.slice(0, 5).map(a => `- "${a.title}" (${a.status})`).join('\n')}
+
+POSTING AGENTS:
+${data.schedule.map(s => s.agentName).join(', ')}
+
+YOUR CAPABILITIES:
+1. Analyze content performance and trends
+2. Predict outcomes based on data patterns
+3. Identify risks and opportunities
+4. Recommend posting strategies
+5. Generate content ideas
+6. Provide insurance industry insights
+7. Help with decision-making
+
+RESPONSE GUIDELINES:
+- Be concise but thorough
+- Use bullet points for clarity
+- Include specific data when relevant
+- End with actionable recommendations
+- Be professional but approachable`;
+  };
 
   // Quick action prompts
   const quickActions = [
@@ -53,7 +116,7 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
     { icon: <Brain size={16} />, label: 'Decision Helper', prompt: 'I need to decide on my content focus for next week. Help me make the best decision based on the data.' },
   ];
 
-  const sendMessage = async (messageText: string) => {
+  const handleSendMessage = async (messageText: string) => {
     if (!messageText.trim() || isLoading) return;
 
     const userMessage: AIMessage = {
@@ -69,49 +132,53 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
     setShowQuickActions(false);
 
     try {
-      // Build a concise prompt for the AI
-      const recentMessages = messages.slice(-4); // Keep last 4 messages for context
-      const conversationContext = recentMessages.length > 0
-        ? recentMessages.map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content.slice(0, 500)}`).join('\n\n')
+      // Build conversation context
+      const recentMessages = messages.slice(-6);
+      const conversationHistory = recentMessages.length > 0
+        ? '\n\nCONVERSATION HISTORY:\n' + recentMessages.map(m =>
+            `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 500)}`
+          ).join('\n\n')
         : '';
 
-      // Create a shorter system context
-      const shortContext = `You are Defy Insurance AI Assistant. Data: ${data.stats.totalArticles} articles (${data.stats.publishedPosts} published, ${data.stats.scheduledPosts} scheduled), ${data.stats.totalSuccessStories} stories (${data.stats.completedStories} completed). Be helpful, concise, and actionable.`;
+      const fullPrompt = `${conversationHistory}\n\nUser: ${messageText}`;
 
-      // Build the prompt
-      const prompt = conversationContext
-        ? `${shortContext}\n\nRecent conversation:\n${conversationContext}\n\nUser: ${messageText}\n\nAI:`
-        : `${shortContext}\n\nUser: ${messageText}\n\nAI:`;
+      // Use the bulletproof AI service
+      const response: AIResponse = await sendMessage(fullPrompt, {
+        systemPrompt: buildSystemPrompt(),
+        temperature: 0.7,
+        maxTokens: 2000,
+      });
 
-      // Use simple GET endpoint - most reliable
-      const encodedPrompt = encodeURIComponent(prompt);
-      const url = `${POLLINATIONS_TEXT_API}${encodedPrompt}?model=openai&seed=${Date.now()}`;
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const aiResponse = await response.text();
+      setLastModelUsed(response.model);
 
       const assistantMessage: AIMessage = {
         id: `msg-${Date.now()}-ai`,
         role: 'assistant',
-        content: aiResponse,
+        content: response.content,
         timestamp: new Date(),
+        metadata: {
+          model: response.model,
+          latency: response.latency,
+          retries: response.retries,
+        },
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+
+      // Update service status based on response
+      if (!response.success) {
+        setServiceStatus('degraded');
+      }
     } catch (error) {
       console.error('AI Error:', error);
       const errorMessage: AIMessage = {
         id: `msg-${Date.now()}-error`,
         role: 'assistant',
-        content: 'I apologize, but I encountered an error processing your request. Please try again.',
+        content: 'I apologize, but I encountered an unexpected error. The AI service is actively recovering. Please try again in a moment.',
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
+      setServiceStatus('degraded');
     } finally {
       setIsLoading(false);
     }
@@ -119,13 +186,13 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    sendMessage(input);
+    handleSendMessage(input);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage(input);
+      handleSendMessage(input);
     }
   };
 
@@ -138,6 +205,31 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
   const clearChat = () => {
     setMessages([]);
     setShowQuickActions(true);
+    setLastModelUsed(null);
+  };
+
+  const getStatusColor = () => {
+    switch (serviceStatus) {
+      case 'healthy': return 'text-emerald-500';
+      case 'degraded': return 'text-amber-500';
+      case 'offline': return 'text-red-500';
+    }
+  };
+
+  const getStatusIcon = () => {
+    switch (serviceStatus) {
+      case 'healthy': return <CheckCircle2 size={14} />;
+      case 'degraded': return <AlertTriangle size={14} />;
+      case 'offline': return <XCircle size={14} />;
+    }
+  };
+
+  const getStatusText = () => {
+    switch (serviceStatus) {
+      case 'healthy': return 'All Systems Operational';
+      case 'degraded': return 'Partial Service';
+      case 'offline': return 'Service Recovering';
+    }
   };
 
   return (
@@ -152,13 +244,30 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
             <h3 className="text-white font-bold flex items-center gap-2">
               Defy AI Assistant
               <span className="px-2 py-0.5 bg-[#13BCC5]/20 text-[#13BCC5] text-xs rounded-full font-medium">
-                AI Powered
+                Multi-Model AI
               </span>
             </h3>
-            <p className="text-white/60 text-sm">Strategic insights & decision support</p>
+            <p className="text-white/60 text-sm flex items-center gap-2">
+              <span className={`flex items-center gap-1 ${getStatusColor()}`}>
+                {getStatusIcon()}
+                {getStatusText()}
+              </span>
+              {lastModelUsed && (
+                <span className="text-white/40">
+                  | Using: {lastModelUsed}
+                </span>
+              )}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHealth(!showHealth)}
+            className={`p-2 rounded-lg transition-colors ${showHealth ? 'text-[#13BCC5] bg-white/10' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+            title="System Health"
+          >
+            <Activity size={18} />
+          </button>
           <button
             onClick={clearChat}
             className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
@@ -175,6 +284,38 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
           </button>
         </div>
       </div>
+
+      {/* Health Status Panel */}
+      {showHealth && (
+        <div className="bg-slate-50 border-b border-slate-100 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Server className="w-4 h-4 text-[#13BCC5]" />
+            <span className="font-semibold text-sm text-[#1b1e4c]">AI Model Status</span>
+            <span className="text-xs text-slate-400 ml-auto">Auto-failover enabled</span>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {Object.entries(getModelHealthStatus()).slice(0, 10).map(([model, health]) => (
+              <div
+                key={model}
+                className={`text-center p-2 rounded-lg text-xs ${
+                  health.successRate > 80 ? 'bg-emerald-50 text-emerald-700' :
+                  health.successRate > 50 ? 'bg-amber-50 text-amber-700' :
+                  'bg-slate-100 text-slate-500'
+                }`}
+              >
+                <div className="font-medium truncate">{model}</div>
+                <div className="text-[10px] opacity-70">
+                  {health.totalRequests > 0 ? `${Math.round(health.successRate)}%` : 'Ready'}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+            <Shield size={12} />
+            10 AI models available with automatic failover
+          </p>
+        </div>
+      )}
 
       {/* Quick Actions */}
       {showQuickActions && messages.length === 0 && (
@@ -193,7 +334,7 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
             {quickActions.map((action, index) => (
               <button
                 key={index}
-                onClick={() => sendMessage(action.prompt)}
+                onClick={() => handleSendMessage(action.prompt)}
                 className="flex items-center gap-2 p-3 bg-slate-50 hover:bg-[#13BCC5]/10 border border-slate-200 hover:border-[#13BCC5]/30 rounded-xl text-sm font-medium text-slate-700 hover:text-[#1b1e4c] transition-all text-left"
               >
                 <span className="text-[#13BCC5]">{action.icon}</span>
@@ -246,6 +387,17 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
                 <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200">
                   <Bot className="w-4 h-4 text-[#13BCC5]" />
                   <span className="text-xs font-medium text-[#13BCC5]">Defy AI</span>
+                  {message.metadata?.model && (
+                    <span className="text-[10px] text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded">
+                      {message.metadata.model}
+                    </span>
+                  )}
+                  {message.metadata?.latency && (
+                    <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                      <Clock size={10} />
+                      {message.metadata.latency}ms
+                    </span>
+                  )}
                   <button
                     onClick={() => copyToClipboard(message.content, message.id)}
                     className="ml-auto text-slate-400 hover:text-slate-600 transition-colors"
@@ -269,7 +421,18 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
             <div className="bg-slate-100 rounded-2xl px-4 py-3">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 text-[#13BCC5] animate-spin" />
-                <span className="text-sm text-slate-500">Analyzing data...</span>
+                <span className="text-sm text-slate-500">Analyzing with multi-model AI...</span>
+              </div>
+              <div className="flex gap-1 mt-2">
+                {['openai', 'mistral', 'gemini'].map((model, i) => (
+                  <span
+                    key={model}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 animate-pulse"
+                    style={{ animationDelay: `${i * 200}ms` }}
+                  >
+                    {model}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
@@ -301,9 +464,15 @@ const AIAgent: React.FC<AIAgentProps> = ({ data }) => {
             {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
           </button>
         </div>
-        <p className="text-xs text-slate-400 mt-2 text-center">
-          Press Enter to send, Shift+Enter for new line
-        </p>
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-slate-400">
+            Press Enter to send, Shift+Enter for new line
+          </p>
+          <p className="text-xs text-slate-400 flex items-center gap-1">
+            <Shield size={10} />
+            Bulletproof AI with 10 model fallbacks
+          </p>
+        </div>
       </form>
     </div>
   );

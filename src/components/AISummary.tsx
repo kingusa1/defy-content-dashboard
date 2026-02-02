@@ -35,10 +35,48 @@ const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata })
     setUsedModel(null);
 
     const prompt = type === 'article'
-      ? `Analyze this social media post about insurance/business news and provide a brief 2-3 sentence summary highlighting the key points, target audience appeal, and potential engagement value:\n\nTitle: ${title || 'N/A'}\nContent: ${content}`
+      ? `You are a social media marketing expert. Analyze this insurance/business news post and provide a CONCISE actionable summary (max 4 sentences):
+
+1. KEY INSIGHT: What's the main news/value?
+2. BEST TIME TO POST: Suggest optimal posting time
+3. ENGAGEMENT TIP: One specific way to boost engagement
+4. NEXT ACTION: What should the user do with this post?
+
+Title: ${title || 'N/A'}
+Content: ${content}
+
+Be direct, specific, and actionable. No fluff.`
       : type === 'story'
-      ? `Analyze this customer success story social media post and provide a brief 2-3 sentence summary highlighting the customer benefit, emotional appeal, and call-to-action effectiveness:\n\nContent: ${content}`
-      : `Analyze this weekly metrics data and provide a brief 2-3 sentence summary highlighting performance insights, trends, and recommendations:\n\nData: ${JSON.stringify(metadata || {})}`;
+      ? `You are a social media marketing expert. Analyze this customer success story and provide a CONCISE actionable summary (max 4 sentences):
+
+1. STORY STRENGTH: What makes this story compelling?
+2. EMOTIONAL HOOK: The key emotional trigger for engagement
+3. CTA EFFECTIVENESS: Is the call-to-action strong? How to improve?
+4. NEXT ACTION: Should this post now, be edited, or saved for later?
+
+Content: ${content}
+
+Be direct, specific, and actionable. No fluff.`
+      : `You are a LinkedIn outreach performance analyst. Analyze these metrics and provide a CONCISE actionable summary (max 4 sentences):
+
+METRICS:
+- Agent: ${metadata?.agent || 'N/A'}
+- Campaign: ${metadata?.campaign || 'N/A'}
+- Acceptance Rate: ${metadata?.acceptanceRate || 'N/A'}
+- Replies: ${metadata?.replies || 'N/A'}
+- Total Invited: ${metadata?.totalInvited || 'N/A'}
+- Total Accepted: ${metadata?.totalAccepted || 'N/A'}
+- Messages Sent: ${metadata?.totalMessaged || 'N/A'}
+- Net New Connects: ${metadata?.netNewConnects || 'N/A'}
+- Defy Lead: ${metadata?.defyLead || 'None'}
+
+PROVIDE:
+1. PERFORMANCE VERDICT: Good/Average/Needs Improvement + why
+2. KEY INSIGHT: Most important finding from the data
+3. BOTTLENECK: What's limiting better results?
+4. NEXT ACTION: Specific step to improve performance
+
+Be direct, data-driven, and actionable. No fluff.`;
 
     // Try each model in sequence until one succeeds
     for (const model of AI_MODELS) {
@@ -87,25 +125,59 @@ const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata })
     meta?: Record<string, string>
   ): string => {
     if (contentType === 'metric' && meta) {
-      const insights = [];
-      if (meta.acceptanceRate) insights.push(`Acceptance rate: ${meta.acceptanceRate}`);
-      if (meta.replies) insights.push(`${meta.replies} replies received`);
-      if (meta.totalInvited) insights.push(`${meta.totalInvited} total invitations`);
-      if (meta.campaign) insights.push(`Campaign: ${meta.campaign}`);
-      return insights.length > 0
-        ? `Key metrics: ${insights.join(', ')}. Review the data for detailed performance analysis.`
-        : 'Review the complete data set for performance insights.';
+      const acceptRate = parseFloat(meta.acceptanceRate?.replace('%', '') || '0');
+      const replies = parseInt(meta.replies || '0');
+      const invited = parseInt(meta.totalInvited || '0');
+
+      let verdict = 'NEEDS REVIEW';
+      let insight = '';
+      let action = '';
+
+      if (acceptRate >= 30) {
+        verdict = '✅ STRONG PERFORMANCE';
+        insight = `${acceptRate}% acceptance rate is above average.`;
+      } else if (acceptRate >= 15) {
+        verdict = '⚠️ AVERAGE PERFORMANCE';
+        insight = `${acceptRate}% acceptance rate - room for improvement.`;
+      } else if (acceptRate > 0) {
+        verdict = '🔴 NEEDS ATTENTION';
+        insight = `${acceptRate}% acceptance rate is below target.`;
+      }
+
+      if (replies > 0 && invited > 0) {
+        const replyRate = ((replies / invited) * 100).toFixed(1);
+        action = `Reply rate: ${replyRate}%. ${parseFloat(replyRate) < 5 ? 'Consider revising message template.' : 'Message resonating well.'}`;
+      } else {
+        action = 'Review outreach volume and message quality.';
+      }
+
+      return `${verdict} | ${insight} ${action} Next: ${meta.defyLead ? 'Follow up on lead: ' + meta.defyLead : 'Focus on generating qualified leads.'}`;
     }
 
     const wordCount = text.split(/\s+/).length;
     const hasHashtags = text.includes('#');
     const hasEmojis = /[\u{1F300}-\u{1F9FF}]/u.test(text);
+    const hasCTA = /click|learn|discover|join|sign up|contact|dm|link/i.test(text);
 
     if (contentType === 'article') {
-      return `This ${wordCount}-word post ${hasHashtags ? 'includes hashtags for discoverability' : 'could benefit from hashtags'}. ${hasEmojis ? 'Uses emojis for engagement.' : 'Consider adding emojis to increase engagement.'} The content focuses on industry news and updates.`;
+      const issues = [];
+      if (!hasHashtags) issues.push('Add 3-5 relevant hashtags');
+      if (!hasEmojis) issues.push('Add emojis for 25% more engagement');
+      if (wordCount > 300) issues.push('Consider shortening for better readability');
+      if (!hasCTA) issues.push('Add a clear call-to-action');
+
+      const status = issues.length === 0 ? '✅ READY TO POST' : `⚠️ ${issues.length} IMPROVEMENTS NEEDED`;
+      return `${status} | ${wordCount} words. ${issues.length > 0 ? 'To-do: ' + issues.join(', ') + '.' : 'Post is optimized for engagement.'} Best time: Tue-Thu 9-11am.`;
     }
 
-    return `This success story post contains ${wordCount} words. ${hasHashtags ? 'Includes relevant hashtags.' : 'Consider adding hashtags.'} ${hasEmojis ? 'Uses emojis effectively.' : 'Emojis could enhance emotional connection.'} Strong customer-focused messaging.`;
+    // Success story
+    const issues = [];
+    if (!hasHashtags) issues.push('Add hashtags (#CustomerSuccess, #InsurTech)');
+    if (!hasEmojis) issues.push('Add emojis for emotional connection');
+    if (!hasCTA) issues.push('Add CTA (Contact us, Learn more)');
+
+    const status = issues.length === 0 ? '✅ COMPELLING STORY' : `⚠️ ENHANCE BEFORE POSTING`;
+    return `${status} | ${wordCount} words. ${issues.length > 0 ? 'Improvements: ' + issues.join(', ') + '.' : 'Strong emotional appeal.'} Next: ${issues.length > 0 ? 'Make edits then schedule.' : 'Schedule for peak hours.'}`;
   };
 
   useEffect(() => {

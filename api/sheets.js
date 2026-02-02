@@ -3,11 +3,11 @@ import { google } from 'googleapis';
 // Google Sheets configuration
 const SPREADSHEET_ID = '1TFtKMMAhevtYMTZb1dmx1Xmd9UjJnMyx4abZx9YIUwE';
 
-// Sheet names (tabs) - update these to match your actual Google Sheet tab names
+// Sheet names (tabs) - actual Google Sheet tab names
 const SHEETS = {
-  NEWS: 'Insurance News',
-  SCHEDULE: 'Schedule',
-  SUCCESS: 'Success Stories'
+  NEWS: 'insurance_news_log',
+  SCHEDULE: 'Post Scheduling',
+  SUCCESS: 'customer success post defy insurance'
 };
 
 // Helper function to determine article status

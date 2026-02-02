@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Loader2, RefreshCw, Copy, Check, Bot } from 'lucide-react';
 
 interface AISummaryProps {
@@ -17,22 +17,48 @@ const AI_MODELS = [
   'deepseek',
 ];
 
+// Simple cache for AI summaries (persists during session)
+const summaryCache = new Map<string, { summary: string; model: string }>();
+
+// Generate a cache key from content
+const getCacheKey = (content: string, type: string, title?: string, metadata?: Record<string, string>): string => {
+  const metaStr = metadata ? JSON.stringify(metadata) : '';
+  return `${type}:${title || ''}:${content.slice(0, 200)}:${metaStr.slice(0, 100)}`;
+};
+
 const AISummary: React.FC<AISummaryProps> = ({ content, type, title, metadata }) => {
   const [summary, setSummary] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [usedModel, setUsedModel] = useState<string | null>(null);
+  const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const generateSummary = async () => {
+  const generateSummary = async (forceRefresh = false) => {
     if (!content || content.trim().length < 10) {
       setSummary('Not enough content to generate a summary.');
       return;
     }
 
+    // Check cache first (unless forcing refresh)
+    const cacheKey = getCacheKey(content, type, title, metadata);
+    if (!forceRefresh && summaryCache.has(cacheKey)) {
+      const cached = summaryCache.get(cacheKey)!;
+      setSummary(cached.summary);
+      setUsedModel(cached.model);
+      return;
+    }
+
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
     setLoading(true);
     setError(null);
     setUsedModel(null);
+    setCurrentModel(null);
 
     const prompt = type === 'article'
       ? `You are a social media marketing expert. Analyze this insurance/business news post and provide a CONCISE actionable summary (max 4 sentences):
@@ -81,15 +107,17 @@ Be direct, data-driven, and actionable. No fluff.`;
     // Try each model in sequence until one succeeds
     for (const model of AI_MODELS) {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout per model
+        setCurrentModel(model);
+
+        abortControllerRef.current = new AbortController();
+        const timeoutId = setTimeout(() => abortControllerRef.current?.abort(), 10000); // 10s timeout per model
 
         const response = await fetch(
           `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${model}`,
           {
             method: 'GET',
             headers: { 'Accept': 'text/plain' },
-            signal: controller.signal
+            signal: abortControllerRef.current.signal
           }
         );
 
@@ -98,14 +126,25 @@ Be direct, data-driven, and actionable. No fluff.`;
         if (response.ok) {
           const text = await response.text();
           if (text && text.trim().length > 10) {
-            setSummary(text.trim());
+            const trimmedText = text.trim();
+            setSummary(trimmedText);
             setUsedModel(model);
+            setCurrentModel(null);
             setLoading(false);
+            // Cache the successful result
+            summaryCache.set(cacheKey, { summary: trimmedText, model });
             return; // Success! Exit the loop
           }
         }
+
+        // Small delay before trying next model to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
-        console.log(`Model ${model} failed, trying next...`, err);
+        if ((err as Error).name === 'AbortError') {
+          console.log(`Model ${model} timed out, trying next...`);
+        } else {
+          console.log(`Model ${model} failed, trying next...`, err);
+        }
         // Continue to next model
       }
     }
@@ -115,8 +154,11 @@ Be direct, data-driven, and actionable. No fluff.`;
     const fallback = generateFallbackSummary(content, type, metadata);
     setSummary(fallback);
     setUsedModel('fallback');
+    setCurrentModel(null);
     setError(null);
     setLoading(false);
+    // Cache the fallback too
+    summaryCache.set(cacheKey, { summary: fallback, model: 'fallback' });
   };
 
   const generateFallbackSummary = (
@@ -181,7 +223,13 @@ Be direct, data-driven, and actionable. No fluff.`;
   };
 
   useEffect(() => {
-    generateSummary();
+    generateSummary(false);
+    // Cleanup on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [content, type]);
 
   const copyToClipboard = async () => {
@@ -221,7 +269,7 @@ Be direct, data-driven, and actionable. No fluff.`;
             </button>
           )}
           <button
-            onClick={generateSummary}
+            onClick={() => generateSummary(true)}
             disabled={loading}
             className="p-1.5 hover:bg-purple-100 rounded-lg transition-colors disabled:opacity-50"
             title="Regenerate summary"
@@ -234,7 +282,9 @@ Be direct, data-driven, and actionable. No fluff.`;
       {loading ? (
         <div className="flex items-center gap-2 text-purple-600">
           <Loader2 size={16} className="animate-spin" />
-          <span className="text-sm">Generating AI insights...</span>
+          <span className="text-sm">
+            {currentModel ? `Trying ${currentModel}...` : 'Generating AI insights...'}
+          </span>
         </div>
       ) : error ? (
         <div className="text-sm text-red-600">{error}</div>

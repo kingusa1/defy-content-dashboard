@@ -593,23 +593,26 @@ app.post('/api/metrics/add', async (req, res) => {
 
     const rows = existingData.data.values || [];
 
-    // Find the last row that has ANY data in ANY column (skip header at index 0)
-    let lastDataRowIndex = 0; // Start at header (row 1)
-    for (let i = rows.length - 1; i >= 1; i--) {
+    // Find the FIRST empty row after row 1 (header)
+    // This ensures new data is added consecutively, not at the very end
+    let firstEmptyRowIndex = 1; // Start checking from row 2 (index 1)
+
+    for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
-      // Check if ANY cell in this row has data
-      const hasAnyData = row && row.some(cell => cell && cell.toString().trim() !== '');
-      if (hasAnyData) {
-        lastDataRowIndex = i;
+      // Check if this row has ANY data in the first 5 key columns (status, campaign, message, audience, agent)
+      const hasKeyData = row && row.slice(0, 5).some(cell => cell && cell.toString().trim() !== '');
+
+      if (hasKeyData) {
+        firstEmptyRowIndex = i + 1; // Move past this row
+      } else {
+        // Found an empty row - this is where we'll insert
         break;
       }
     }
 
-    // New row goes immediately after the last row with data
-    // Array index is 0-based, Sheets rows are 1-based
-    // So if lastDataRowIndex=881 (array), that's row 882 in sheets
-    // Next empty row is 882+1 = 883
-    const emptyRowIndex = lastDataRowIndex + 2;
+    // Convert to 1-based sheet row number
+    // Array index 1 = Sheet row 2, so add 1
+    const emptyRowIndex = firstEmptyRowIndex + 1;
 
     // Write to the specific empty row using update() instead of append()
     await sheets.spreadsheets.values.update({

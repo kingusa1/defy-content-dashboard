@@ -31,7 +31,7 @@ import {
   FileCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import WeekMetricsAnalytics from './WeekMetricsAnalytics';
+import WeekMetricsAdvancedAnalytics from './WeekMetricsAdvancedAnalytics';
 import AISummary from './AISummary';
 import axios from 'axios';
 
@@ -2034,9 +2034,9 @@ const WeekMetricsForm: React.FC<WeekMetricsFormProps> = ({ onRefresh }) => {
         </div>
       )}
 
-      {/* Analytics View */}
+      {/* Analytics View - Enterprise Grade */}
       {activeView === 'analytics' && (
-        <WeekMetricsAnalytics metrics={filteredMetrics} />
+        <WeekMetricsAdvancedAnalytics metrics={filteredMetrics} />
       )}
 
       {/* Data View */}

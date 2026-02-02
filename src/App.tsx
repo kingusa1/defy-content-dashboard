@@ -2,14 +2,19 @@ import React from 'react';
 import Layout from './components/Layout';
 import ContentDashboard from './components/ContentDashboard';
 import LoginPage from './components/LoginPage';
+import SettingsPage from './components/SettingsPage';
+import ProfilePage from './components/ProfilePage';
+import HelpPage from './components/HelpPage';
 import { useContentData } from './hooks/useContentData';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SearchProvider } from './context/SearchContext';
+import { NavigationProvider, useNavigation } from './context/NavigationContext';
 import { AlertTriangle, Loader2, Info } from 'lucide-react';
 
 const DashboardContent: React.FC = () => {
   const { data, loading, error, refresh } = useContentData();
   const { user } = useAuth();
+  const { currentPage, navigateTo } = useNavigation();
 
   // Initial loading state
   if (loading && data.articles.length === 0) {
@@ -30,37 +35,56 @@ const DashboardContent: React.FC = () => {
     );
   }
 
+  // Render the appropriate page based on current navigation
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'settings':
+        return <SettingsPage onBack={() => navigateTo('dashboard')} />;
+      case 'profile':
+        return <ProfilePage onBack={() => navigateTo('dashboard')} />;
+      case 'help':
+        return <HelpPage onBack={() => navigateTo('dashboard')} />;
+      case 'dashboard':
+      default:
+        return (
+          <>
+            {/* Error Banner */}
+            {error && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                <AlertTriangle className="text-amber-500 w-5 h-5 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold text-amber-800">Connection Issue</p>
+                  <p className="text-sm text-amber-600 mt-1">{error}</p>
+                  <p className="text-sm text-amber-600">Data may be outdated. Click refresh to try again.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Info Banner for Empty Data */}
+            {!error && data.articles.length === 0 && data.successStories.length === 0 && (
+              <div className="mb-6 p-4 bg-[#13BCC5]/10 border border-[#13BCC5]/20 rounded-xl flex items-start gap-3">
+                <Info className="text-[#13BCC5] w-5 h-5 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold text-[#1b1e4c]">Connecting to Google Sheets</p>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Make sure your Google Sheet is shared with the service account email.
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    Email: <code className="bg-slate-100 px-1 rounded text-xs">defy-dashboard@defy-insurance-486209.iam.gserviceaccount.com</code>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <ContentDashboard data={data} onRefresh={refresh} loading={loading} />
+          </>
+        );
+    }
+  };
+
   return (
     <Layout>
-      {/* Error Banner */}
-      {error && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
-          <AlertTriangle className="text-amber-500 w-5 h-5 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="font-semibold text-amber-800">Connection Issue</p>
-            <p className="text-sm text-amber-600 mt-1">{error}</p>
-            <p className="text-sm text-amber-600">Data may be outdated. Click refresh to try again.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Info Banner for Empty Data */}
-      {!error && data.articles.length === 0 && data.successStories.length === 0 && (
-        <div className="mb-6 p-4 bg-[#13BCC5]/10 border border-[#13BCC5]/20 rounded-xl flex items-start gap-3">
-          <Info className="text-[#13BCC5] w-5 h-5 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="font-semibold text-[#1b1e4c]">Connecting to Google Sheets</p>
-            <p className="text-sm text-slate-600 mt-1">
-              Make sure your Google Sheet is shared with the service account email.
-            </p>
-            <p className="text-sm text-slate-600">
-              Email: <code className="bg-slate-100 px-1 rounded text-xs">defy-dashboard@defy-insurance-486209.iam.gserviceaccount.com</code>
-            </p>
-          </div>
-        </div>
-      )}
-
-      <ContentDashboard data={data} onRefresh={refresh} loading={loading} />
+      {renderPage()}
     </Layout>
   );
 };
@@ -99,7 +123,9 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <SearchProvider>
-        <AppContent />
+        <NavigationProvider>
+          <AppContent />
+        </NavigationProvider>
       </SearchProvider>
     </AuthProvider>
   );
